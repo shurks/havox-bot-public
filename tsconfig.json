@@ -1,0 +1,47 @@
+{
+	"compilerOptions": {
+		"target": "ESNext",
+		"lib": [
+			"dom",
+			"dom.iterable",
+			"esnext"
+		],
+		"allowJs": true,
+		"skipLibCheck": true,
+		"esModuleInterop": true,
+		"allowSyntheticDefaultImports": true,
+		"strict": true,
+		"forceConsistentCasingInFileNames": true,
+		"noFallthroughCasesInSwitch": true,
+		"module": "CommonJS",
+		"moduleResolution": "node",
+		"resolveJsonModule": true,
+		"isolatedModules": true,
+		"noEmit": false,
+		"outDir": "dist/js",
+		"sourceMap": true,
+		"declaration": true,
+        "emitDecoratorMetadata": true,
+        "experimentalDecorators": true,
+		"noImplicitAny": true,
+		"strictPropertyInitialization": false,
+		"typeRoots": [
+			"@types",
+			"node_modules/@types",
+			"src/**/@types"
+		],
+		"types": [
+			"node"
+		]
+	},
+	"include": [
+        "src/**/*.ts",
+        "scripts/**/*.ts"
+	],
+	"ts-node": {
+		"files": true,
+		"compilerOptions": {
+			"module": "CommonJS"
+		}
+	}
+}
