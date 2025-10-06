@@ -60,7 +60,7 @@ export default class InitializeTicket {
         await interaction.guild.channels.create({
             name: rsn,
             type: 0,
-            parent: Variables.var.ArchiveCategory,
+            parent: Variables.var.MembersCategory,
             permissionOverwrites: [
                 {
                     id: Variables.var.AppRole,
