@@ -67,7 +67,7 @@ export default class Discord {
                     .addChoices(rankChoices)
             ),
         new SlashCommandBuilder()
-            .setName('create-ticket')
+            .setName('initialize-ticket')
             .setDescription('Admin: Creates a ticket for an applicant, and approves them without trial.')
             .addUserOption(option =>
                 option
