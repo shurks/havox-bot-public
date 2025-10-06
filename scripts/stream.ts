@@ -1,9 +1,5 @@
-import { spawn } from "child_process";
 import NodeMediaServer from "node-media-server";
 import path from "path";
-import Discord from "../src/discord/discord";
-import { AudioPlayer, AudioPlayerStatus, createAudioPlayer, createAudioResource, joinVoiceChannel, StreamType, VoiceConnection } from "@discordjs/voice";
-import Variables from "../src/variables";
 
 const nms = new NodeMediaServer({
   logType: 3,
@@ -32,10 +28,13 @@ const nms = new NodeMediaServer({
     ]
   }
 })
+
 nms.run()
 
-nms.on('prePublish', function a (id, StreamPath, args) {
-    console.log(`[NodeMediaServer] Stream ${StreamPath} is starting...`);
+nms.on('prePublish', (id: any) => {
+    const key = id?.rtmp?.streamName || null
+
+    console.log(`[NodeMediaServer] Stream ${id} is starting...`);
 });
 
 nms.on('donePublish', (id, StreamPath, args) => {

@@ -18,6 +18,8 @@ import StartTrial from "./commands/admin/applicant/start-trial";
 import Archiver from "./commands/admin/relation/archiver";
 import { AudioPlayer } from "@discordjs/voice";
 import ObsMusic from "./commands/obs-music";
+import InitializeTicket from "./commands/admin/initialize-ticket";
+import DeleteRSN from "./commands/admin/delete-rsn";
 
 const rankChoices = Object.entries(Variables.var.Emojis).map(([k, v]) => {
     // TODO: calculate
@@ -64,6 +66,26 @@ export default class Discord {
                     .setRequired(true)
                     .addChoices(rankChoices)
             ),
+        new SlashCommandBuilder()
+            .setName('create-ticket')
+            .setDescription('Admin: Creates a ticket for an applicant, and approves them without trial.')
+            .addUserOption(option =>
+                option
+                    .setName('user')
+                    .setRequired(true)
+                    .setDescription('The user to create a ticket for')
+            )
+            .addStringOption(rsn =>
+                rsn
+                    .setName('rsn')
+                    .setRequired(true)
+                    .setDescription('The RSN of the user (more can be added later)')
+            ),
+        new SlashCommandBuilder()
+            .setName('delete-rsn')
+            .setDescription('Admin: Delete a RSN for a user within a ticket')
+            .addStringOption(rsn => rsn.setRequired(true).setName('rsn').setDescription('The RSN to delete'))
+            ,
         new SlashCommandBuilder()
             .setName('applicant-confirm-deleted')
             .setDescription('Admin: Confirms that an applicant is deleted from the clan in game, after failing the trial.')
@@ -294,24 +316,12 @@ export default class Discord {
                         promise = ObsMusic.setStreamKey(interaction)
                         break
                     }
-                    case 'set-aaa': {
-                        const repo = Bot.dataSource.getRepository(ClanApplication)
-                        // const clanApp = new ClanApplication()
-                        // const channel = await interaction.channel?.fetch(true) as TextChannel
-                        // clanApp.rsn = channel.name
-                        // clanApp.approved = true
-                        // clanApp.trial = true
-                        // clanApp.archived = false
-                        // clanApp.userId = interaction.options.getUser('user')!.id
-                        // await repo.save(clanApp)
-                        const apps = await repo.find()
-                        for (const app of apps) {
-                            const channel = interaction.guild?.channels.cache.find(ch => ch.type === 0 && ch.name === app.rsn && ch.parentId === "1422417597265088532")
-                            if (channel) {
-                                app.channel = channel.id
-                                await repo.save(app)
-                            }
-                        }
+                    case 'initialize-ticket': {
+                        promise = InitializeTicket.main(interaction)
+                        break
+                    }
+                    case 'delete-rsn': {
+                        promise = DeleteRSN.main(interaction)
                         break
                     }
                 }

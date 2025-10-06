@@ -32,9 +32,9 @@ export default class Bot {
         console.log('Starting twitch bot')
         await Twitch.main()
         console.log('Processing commits')
-        // await this.processCommits()
-        // console.log('Running cronjobs')
-        // this.runCronJobs()
+        await this.processCommits()
+        console.log('Running cronjobs')
+        this.runCronJobs()
     }
 
     private static runCronJobs = async() => {

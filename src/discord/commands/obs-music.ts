@@ -1,4 +1,4 @@
-import { ChatInputCommandInteraction, User, VoiceChannel } from "discord.js";
+import { ChatInputCommandInteraction, TextChannel, User, VoiceChannel } from "discord.js";
 import Variables from "../../variables";
 import Discord from "../discord";
 import { AudioPlayerStatus, AudioResource, createAudioPlayer, createAudioResource, demuxProbe, entersState, joinVoiceChannel, StreamType, VoiceConnection, VoiceConnectionStatus } from "@discordjs/voice";
@@ -78,7 +78,6 @@ export default class ObsMusic {
                 'pipe:1'
             ], { stdio: ['ignore', 'pipe', 'pipe'] });
             ffmpeg.stdout.pipe(this.passThrough);
-            ffmpeg.stderr.on('data', chunk => console.error('FFmpeg error:', chunk.toString()));
             ffmpeg.on('close', code => console.log('FFmpeg exited with code', code));
             ffmpeg.on('error', code => console.log(code))
             const { stream, type } = await demuxProbe(this.passThrough)
@@ -105,6 +104,12 @@ export default class ObsMusic {
         player.on('error', error => console.error(error));
         player.play(opus)
         this.connection.subscribe(player)
+        const notiChannel = await guild.channels.fetch("1419466761199292476") as TextChannel
+        if (!notiChannel) {
+            await interaction.editReply('❌ No streamers channel to broadcast stream')
+            return
+        }
+        await notiChannel.send(`Hey <@&1422230444115755214>, <@${member.id}> is now live in the <#${channel.id}> channel, enjoy!\n\nIt is possible to use the voice channel's chat as stream chat and it is possible to tune in, but if you want to chill with us you will have to join the clan! :)`)
         await interaction.editReply('✅ Invited')
     }
 
