@@ -19,12 +19,18 @@ import ObsMusic from './discord/commands/obs-music';
 dotenv.config();
 
 process.on('SIGINT', () => {
-  console.log('🛑 Caught SIGINT, shutting down gracefully...');
-  Bot.running = false;
+    console.log('🛑 Caught SIGINT, shutting down gracefully...');
+    Bot.running = false;
+    if (Bot.sleep) {
+        clearTimeout(Bot.sleep)
+    }
 });
 process.on('SIGTERM', () => {
-  console.log('🛑 Caught SIGTERM, shutting down gracefully...');
-  Bot.running = false;
+    console.log('🛑 Caught SIGTERM, shutting down gracefully...');
+    Bot.running = false;
+    if (Bot.sleep) {
+        clearTimeout(Bot.sleep)
+    }
 });
 
 export default class Bot {
@@ -117,6 +123,8 @@ export default class Bot {
 
     public static running = true
 
+    public static sleep: any = null
+
     private static runCronJobs = async() => {
         let counter = 0
         const processAllMembers = async() => {
@@ -132,7 +140,14 @@ export default class Bot {
             console.log('✅')
         }
         while (this.running) {
-            await new Promise<void>((res, rej) => setTimeout(res, 1000 * 60 * 5))
+            await new Promise<void>((res, rej) => {
+                if (!this.sleep) {
+                    this.sleep = setTimeout(() => {
+                        this.sleep = null
+                        res()
+                    }, 1000 * 60 * 5)
+                }
+            })
             await processAllMembers()
             await processFrequent() 
             if (++counter % 12 === 0) {
