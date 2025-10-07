@@ -15,6 +15,7 @@ import { PermissionFlagsBits, PermissionsBitField, REST, Routes, TextChannel, Vo
 import ProcessAllMembersTask from './discord/tasks/process-all-members-task';
 import { Metadata } from './entities/metadata';
 import { RadioBot } from './entities/radio-bot';
+import ObsMusic from './discord/commands/obs-music';
 dotenv.config();
 
 export default class Bot {
@@ -43,8 +44,35 @@ export default class Bot {
             PermissionFlagsBits.UseVAD,
         ]);
         for (const bot of bots) {
-            await Discord.radioBot(bot.appId, bot.token)
             const guild = await Discord.client.guilds.fetch(Variables.var.Guild)
+            await Discord.radioBot(bot.appId, bot.token)
+            if (bot.userId) {
+                const botMember = await guild.members.fetch(bot.userId)
+                const voiceChannel = botMember.voice.channel;
+
+                if (voiceChannel) {
+                    await ObsMusic.main({
+                        guild: guild,
+                        channelId: bot.channel,
+                        user: {
+                            id: bot.userId
+                        },
+                        editReply: () => {}
+                    } as any, true)
+                    await voiceChannel?.send(`✅ Resumed audio, user is still here after update.`)
+                }
+                else {
+                    const radio = Discord.radios[bot.token]
+                    if (radio?.user) {
+                        const botMember = await guild.members.fetch(radio.user.id)
+                        const voiceChannel = botMember.voice.channel;
+                        await botMember.voice.disconnect()
+                        await voiceChannel?.send(`✅ Disconnected audio, user is no longer here after update.`)
+                    }
+                    bot.userId = null
+                    await botRepo.save(bot)
+                }
+            }
             if (guild) {
                 const channel = await guild.channels.fetch(bot.channel) as VoiceChannel
                 if (channel) {

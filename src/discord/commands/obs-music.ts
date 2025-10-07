@@ -3,7 +3,7 @@ import Variables from "../../variables";
 import Discord from "../discord";
 import { AudioPlayerStatus, AudioResource, createAudioPlayer, createAudioResource, demuxProbe, entersState, joinVoiceChannel, StreamType, VoiceConnection, VoiceConnectionStatus } from "@discordjs/voice";
 import { PassThrough, Readable } from "stream";
-import { spawn } from "child_process";
+import { ChildProcess, spawn } from "child_process";
 import Bot from "../../bot";
 import { ClanApplication } from "../../entities/clan-application";
 import { RadioBot } from "../../entities/radio-bot";
@@ -12,12 +12,14 @@ export type Radio = {
     userId: string
     passThrough: PassThrough
     connection: VoiceConnection | null
+    ffmpegProcess: ChildProcess | null
+    restarting: boolean
 }
 
 export default class ObsMusic {
     public static radios: Record<string, Radio> = {}
     
-    public static main = async (interaction: ChatInputCommandInteraction) => {
+    public static main = async (interaction: ChatInputCommandInteraction, update = false) => {
         let guild = Discord.client.guilds.cache.find(guild => guild.id === Variables.var.Guild)
         if (!guild) {
             console.error('No guild.')
@@ -61,6 +63,8 @@ export default class ObsMusic {
             await interaction.editReply('❌ No radio bot found for this voice channel, register it in the database.')
             return
         }
+        radioEntity.userId = member.user.id
+        await radioRepo.save(radioEntity)
         const discordRadio = Discord.radios[radioEntity.token]
         if (!discordRadio) {
             await interaction.editReply('❌ Radio bot not registered.')
@@ -88,12 +92,35 @@ export default class ObsMusic {
                 adapterCreator: guild.voiceAdapterCreator,
                 group: channel.id
             }),
-            passThrough: new PassThrough()
+            passThrough: new PassThrough(),
+            ffmpegProcess: null,
+            restarting: false
         }
         const radio = this.radios[discordRadio.token]
+        radio.connection!.on(VoiceConnectionStatus.Disconnected, async (oldState, newState) => {
+            console.log('Disconnected, attempting reconnect...');
+            try {
+                await entersState(radio.connection!, VoiceConnectionStatus.Signalling, 5000);
+                await entersState(radio.connection!, VoiceConnectionStatus.Connecting, 5000);
+            } catch {
+                console.log('Reconnecting failed, destroying connection...');
+                radio.connection!.destroy();
+            }
+        });
         await entersState(radio.connection!, VoiceConnectionStatus.Ready, 30000);
-        const createPCMStream = async (rtmpUrl: string): Promise<AudioResource> => {
-                const ffmpeg = spawn('ffmpeg', [
+        const createPCMStream = async (radio: typeof ObsMusic['radios'][number], rtmpUrl: string): Promise<AudioResource> => {
+            if (radio.ffmpegProcess) {
+                radio.ffmpegProcess.removeAllListeners()
+                if (!radio.ffmpegProcess.kill()) {
+                    throw new Error(`Could not kill radio ffmpeg process.`)
+                }
+            }
+            if (radio.passThrough) {
+                try {
+                    radio.passThrough?.destroy()
+                } catch(err) {}
+            }
+            radio.ffmpegProcess = spawn('ffmpeg', [
                 '-re',
                 '-i', rtmpUrl,
                 '-acodec',
@@ -106,18 +133,24 @@ export default class ObsMusic {
                 '2',
                 'pipe:1'
             ], { stdio: ['ignore', 'pipe', 'pipe'] });
-            ffmpeg.stdout.pipe(radio.passThrough);
-            ffmpeg.on('close', code => console.log('FFmpeg exited with code', code));
-            ffmpeg.on('error', code => console.log(code))
+            radio.passThrough = new PassThrough()
+            radio.ffmpegProcess.stdout!.pipe(radio.passThrough);
+            radio.ffmpegProcess.on('close', async(code) => {
+                console.log('FFmpeg exited with code', code)
+                radio.connection?.destroy()
+                radio.passThrough?.destroy()
+                radio.ffmpegProcess?.removeAllListeners()
+                radio.ffmpegProcess?.kill('SIGKILL')
+                await channel.send(`OBS audio exited with code: ${code}`)
+            });
+            radio.ffmpegProcess.on('error', code => console.log(code))
             const { stream, type } = await demuxProbe(radio.passThrough)
             return createAudioResource(stream, {
                 inputType: type
             })
         }
-        const opus = await createPCMStream(`rtmp://hurx.io:8000/live/${streamKey}`)
-        const player = createAudioPlayer({
-            debug: true
-        })
+        const opus = await createPCMStream(radio, `rtmp://hurx.io:8000/live/${streamKey}`)
+        const player = createAudioPlayer()
         radio.connection!.subscribe(player)
         player.on(AudioPlayerStatus.Playing, () => {
             console.log('Streaming RTMP audio into Discord!');
@@ -129,17 +162,54 @@ export default class ObsMusic {
         player.on(AudioPlayerStatus.Buffering, () => {
             console.log('Buffering')
         })
-        player.on(AudioPlayerStatus.Idle, () => {
-            console.log('Idle')
+        player.on(AudioPlayerStatus.Idle, async() => {
+            if (radio.restarting) return
+            radio.restarting = true
+            try {
+                console.log('Idle, restarting');
+
+                const retryDelay = 5000; // 5 seconds
+
+                const resource = await createPCMStream(radio, `rtmp://hurx.io:8000/live/${streamKey}`);
+                player.play(resource);
+                if (resource.ended) {
+                    await new Promise(res => setTimeout(res, retryDelay));
+                }
+                else {
+                    return
+                }
+
+                // Cleanup
+                radio.ffmpegProcess?.removeAllListeners()
+                radio.ffmpegProcess?.kill('SIGKILL')
+                radio.connection?.destroy()
+                radio.passThrough.destroy()
+            }
+            catch (err) {
+                console.error(`Restart failed`, err)
+            }
+            finally {
+                radio.restarting = false
+            }
         })
-        player.on('error', error => console.error(error));
+        player.on('error', async (error) => {
+            console.error(error)
+            // Cleanup
+            radio.ffmpegProcess?.removeAllListeners()
+            radio.ffmpegProcess?.kill('SIGKILL')
+            radio.connection?.destroy()
+            radio.passThrough.destroy()
+            await channel.send(`OBS audio player exited with code: ${error.message}`)
+        });
         player.play(opus)
         const notiChannel = await Discord.client.channels.fetch("1419466761199292476") as TextChannel
         if (!notiChannel) {
             await interaction.editReply('❌ No streamers channel to broadcast stream')
             return
         }
-        await notiChannel.send(`Hey <@&1422230444115755214>, <@${member.id}> is now live in the <#${channel.id}> channel, enjoy!\n\nIt is possible to use the voice channel's chat as stream chat and it is possible to tune in, but if you want to chill with us you will have to join the clan! :)`)
+        if (!update) {
+            await notiChannel.send(`Hey <@&1422230444115755214>, <@${member.id}> is now live in the <#${channel.id}> channel, enjoy!\n\nIt is possible to use the voice channel's chat as stream chat and it is possible to tune in, but if you want to chill with us you will have to join the clan! :)`)
+        }
         await interaction.editReply('✅ Invited')
     }
 

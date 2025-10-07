@@ -13,4 +13,7 @@ export class RadioBot {
 
     @Column({ nullable: false, type: 'varchar' })
     appId: string
+
+    @Column({ nullable: true, type: 'varchar' })
+    userId: string | null = null
 }

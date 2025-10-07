@@ -269,18 +269,13 @@ export default class Discord {
                     if (radio.userId !== newState.member?.id) {
                         return
                     }
-                    if (radio.passThrough) {
-                        try {
-                            radio.passThrough.destroy()
-                        } catch (err) {}
-                    }
-                    radio.passThrough = radio.passThrough || new PassThrough()
-                    if (radio.connection) {
-                        try {
-                            radio.connection.destroy()
-                        } catch (err) {}
-                    }
+                    radio.connection?.destroy()
+                    radio.passThrough?.destroy()
+                    radio.ffmpegProcess?.removeAllListeners()
+                    radio.ffmpegProcess?.kill()
                     delete ObsMusic.radios[discordRadio.token]
+                    discordRadio.userId = null
+                    await repo.save(discordRadio)
                 }
             })
 
