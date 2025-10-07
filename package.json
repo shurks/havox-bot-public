@@ -6,7 +6,8 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "start": "ts-node ./scripts/start.ts",
     "commit": "ts-node ./scripts/commit.ts",
-    "stream": "ts-node ./scripts/stream.ts"
+    "stream": "ts-node ./scripts/stream.ts",
+    "cron": "ts-node ./scripts/cron.ts"
   },
   "author": "",
   "license": "ISC",

@@ -18,10 +18,19 @@ import { RadioBot } from './entities/radio-bot';
 import ObsMusic from './discord/commands/obs-music';
 dotenv.config();
 
+process.on('SIGINT', () => {
+  console.log('🛑 Caught SIGINT, shutting down gracefully...');
+  Bot.running = false;
+});
+process.on('SIGTERM', () => {
+  console.log('🛑 Caught SIGTERM, shutting down gracefully...');
+  Bot.running = false;
+});
+
 export default class Bot {
     public static dataSource: DataSource
 
-    public static main = async () => {
+    public static main = async (cron = false) => {
         console.log('Initializing data source')
         await this.initializeDataSource()
         const repo = Bot.dataSource.getRepository(Metadata)
@@ -31,102 +40,108 @@ export default class Bot {
         }
         console.log('Starting discord bot')
         await Discord.main()
-        console.log('Starting discord radio bots')
-        const botRepo = Bot.dataSource.getRepository(RadioBot)
-        const bots = await botRepo.find()
-        const requiredPermissions = new PermissionsBitField([
-            PermissionFlagsBits.Connect,
-            PermissionFlagsBits.Speak,
-            PermissionFlagsBits.ViewChannel,
-            PermissionFlagsBits.SendMessages,
-            PermissionFlagsBits.ReadMessageHistory,
-            PermissionFlagsBits.AddReactions,
-            PermissionFlagsBits.UseVAD,
-        ]);
-        for (const bot of bots) {
-            const guild = await Discord.client.guilds.fetch(Variables.var.Guild)
-            await Discord.radioBot(bot.appId, bot.token)
-            if (bot.userId) {
-                const botMember = await guild.members.fetch(bot.userId)
-                const voiceChannel = botMember.voice.channel;
-
-                if (voiceChannel) {
-                    await ObsMusic.main({
-                        guild: guild,
-                        channelId: bot.channel,
-                        user: {
-                            id: bot.userId
-                        },
-                        editReply: () => {}
-                    } as any, true)
-                    await voiceChannel?.send(`✅ Resumed audio, user is still here after update.`)
-                }
-                else {
-                    const radio = Discord.radios[bot.token]
-                    if (radio?.user) {
-                        const botMember = await guild.members.fetch(radio.user.id)
-                        const voiceChannel = botMember.voice.channel;
-                        await botMember.voice.disconnect()
-                        await voiceChannel?.send(`✅ Disconnected audio, user is no longer here after update.`)
+        if (!cron) {
+            console.log('Starting discord radio bots')
+            const botRepo = Bot.dataSource.getRepository(RadioBot)
+            const bots = await botRepo.find()
+            const requiredPermissions = new PermissionsBitField([
+                PermissionFlagsBits.Connect,
+                PermissionFlagsBits.Speak,
+                PermissionFlagsBits.ViewChannel,
+                PermissionFlagsBits.SendMessages,
+                PermissionFlagsBits.ReadMessageHistory,
+                PermissionFlagsBits.AddReactions,
+                PermissionFlagsBits.UseVAD,
+            ]);
+            for (const bot of bots) {
+                const guild = await Discord.client.guilds.fetch(Variables.var.Guild)
+                await Discord.radioBot(bot.appId, bot.token)
+                if (bot.userId) {
+                    const botMember = await guild.members.fetch(bot.userId)
+                    const voiceChannel = botMember.voice.channel;
+    
+                    if (voiceChannel) {
+                        await ObsMusic.main({
+                            guild: guild,
+                            channelId: bot.channel,
+                            user: {
+                                id: bot.userId
+                            },
+                            editReply: () => {}
+                        } as any, true)
+                        await voiceChannel?.send(`✅ Resumed audio, user is still here after update.`)
                     }
-                    bot.userId = null
-                    await botRepo.save(bot)
+                    else {
+                        const radio = Discord.radios[bot.token]
+                        if (radio?.user) {
+                            const botMember = await guild.members.fetch(radio.user.id)
+                            const voiceChannel = botMember.voice.channel;
+                            await botMember.voice.disconnect()
+                            await voiceChannel?.send(`✅ Disconnected audio, user is no longer here after update.`)
+                        }
+                        bot.userId = null
+                        await botRepo.save(bot)
+                    }
                 }
-            }
-            if (guild) {
-                const channel = await guild.channels.fetch(bot.channel) as VoiceChannel
-                if (channel) {
-                    const radio = Discord.radios[bot.token]
-                    if (radio.user) {
-                        const user = await guild.members.fetch(radio.user.id)
-                        if (user) {
-                            const permissions = channel.permissionsFor(user.id)
-                            const missing = requiredPermissions
-                                .toArray()
-                                .filter(perm => !permissions?.has(perm));
-                            if (missing.length > 0) {
-                                await channel.permissionOverwrites.edit(user.id, Object.fromEntries(
-                                    missing.map(perm => [perm, true])
-                                ))
+                if (guild) {
+                    const channel = await guild.channels.fetch(bot.channel) as VoiceChannel
+                    if (channel) {
+                        const radio = Discord.radios[bot.token]
+                        if (radio.user) {
+                            const user = await guild.members.fetch(radio.user.id)
+                            if (user) {
+                                const permissions = channel.permissionsFor(user.id)
+                                const missing = requiredPermissions
+                                    .toArray()
+                                    .filter(perm => !permissions?.has(perm));
+                                if (missing.length > 0) {
+                                    await channel.permissionOverwrites.edit(user.id, Object.fromEntries(
+                                        missing.map(perm => [perm, true])
+                                    ))
+                                }
                             }
                         }
                     }
                 }
             }
+            console.log('Starting twitch bot')
+            await Twitch.main()
+            console.log('Processing commits')
+            await this.processCommits()
         }
-        console.log('Starting twitch bot')
-        await Twitch.main()
-        console.log('Processing commits')
-        await this.processCommits()
-        console.log('Running cronjobs')
-        this.runCronJobs()
+        else {
+            console.log('Running cronjobs')
+            this.runCronJobs()
+        }
     }
 
+    public static running = false
+
     private static runCronJobs = async() => {
-        const processAllMembers = async() => {
-            console.log('Processing all members')
-            await ProcessAllMembersTask.main()
-            console.log('✅')
-        }
-        setInterval(processAllMembers, 3600 * 1000)
-        await processAllMembers()
-        setTimeout(() => {
-            setInterval(async() => {
+        let counter = 0
+        while (this.running) {
+            const processAllMembers = async() => {
+                console.log('Processing all members')
+                await ProcessAllMembersTask.main()
+                console.log('✅')
+            }
+            const processFrequent = async() => {
+                console.log('Sorting categories')
+                await SortRelationManager.main()
+                console.log('Updating hall of fame')
+                await Stats.updateHallOfFame()
+                console.log('✅')
+            }
+            await new Promise<void>(res => setTimeout(res, 5 * 60 * 1000))
+            await processAllMembers()
+            await processFrequent() 
+            if (++counter % 12 === 0) {
                 console.log('Approving/declining trialists')
                 await ApproveTrialistTask.main()
                 console.log('✅')
-            }, 3600 * 1000)
-        })
-        const processFrequent = async() => {
-            console.log('Sorting categories')
-            await SortRelationManager.main()
-            console.log('Updating hall of fame')
-            await Stats.updateHallOfFame()
+            }
             console.log('✅')
         }
-        setInterval(processFrequent, 5 * 60 * 1000)
-        await processFrequent()
-        console.log('✅')
     }
 
     public static initializeDataSource = async() => {

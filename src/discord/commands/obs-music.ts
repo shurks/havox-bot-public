@@ -142,6 +142,7 @@ export default class ObsMusic {
                 radio.ffmpegProcess?.removeAllListeners()
                 radio.ffmpegProcess?.kill('SIGKILL')
                 await channel.send(`OBS audio exited with code: ${code}`)
+                delete this.radios[discordRadio.token!]
             });
             radio.ffmpegProcess.on('error', code => console.log(code))
             const { stream, type } = await demuxProbe(radio.passThrough)
