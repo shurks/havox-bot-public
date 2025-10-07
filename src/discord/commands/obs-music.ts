@@ -135,7 +135,7 @@ export default class ObsMusic {
         })
         player.on('error', error => console.error(error));
         player.play(opus)
-        const notiChannel = await guild.channels.fetch("1419466761199292476") as TextChannel
+        const notiChannel = await Discord.client.channels.fetch("1419466761199292476") as TextChannel
         if (!notiChannel) {
             await interaction.editReply('❌ No streamers channel to broadcast stream')
             return
