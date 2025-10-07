@@ -266,6 +266,9 @@ export default class Discord {
                     if (!discordRadio) return
                     const radio = ObsMusic.radios[discordRadio.token]
                     if (!radio) return
+                    if (radio.userId !== newState.member?.id) {
+                        return
+                    }
                     if (radio.passThrough) {
                         try {
                             radio.passThrough.destroy()
