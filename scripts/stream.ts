@@ -4,11 +4,11 @@ import Bot from '../src/bot';
 import { ClanApplication } from '../src/entities/clan-application';
 
 const nms = new NodeMediaServer({
-  logType: 3,
+  logType: 2,
   rtmp: {
     port: 8000,
-    chunk_size: 60000,
-    gop_cache: true,
+    chunk_size: 4096,
+    gop_cache: false,
     ping: 30,
     ping_timeout: 60,
   },
@@ -22,8 +22,8 @@ const nms = new NodeMediaServer({
     tasks: [
       {
         app: 'live',
-        hls: true,
-        hlsFlags: '[hls_time=2:hls_list_size=30:hls_flags=delete_segments]',
+        // hls: true,
+        // hlsFlags: '[hls_time=2:hls_list_size=30:hls_flags=delete_segments]',
         dash: false,
         ac: 'aac',
       },
@@ -53,3 +53,12 @@ Bot.initializeDataSource().then(() => {
     console.log(`[NodeMediaServer] Stream "${streamPath}" has ended.`);
   });
 });
+
+setInterval(() => {
+  const mem = process.memoryUsage().rss / 1024 / 1024;
+  if (mem > 1000) {
+    console.warn(`[NMS] High memory usage (${mem.toFixed(0)} MB) — restarting...`);
+    process.exit(1);
+  }
+  console.log(`Memory: ${mem.toFixed(0)} MB`)
+}, 60000);

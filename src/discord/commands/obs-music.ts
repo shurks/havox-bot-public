@@ -107,6 +107,7 @@ export default class ObsMusic {
                 radio.connection!.destroy();
             }
         });
+        radio.connection!.on('error', console.error)
         await entersState(radio.connection!, VoiceConnectionStatus.Ready, 30000);
         const createPCMStream = async (radio: typeof ObsMusic['radios'][number], rtmpUrl: string): Promise<AudioResource> => {
             if (radio.ffmpegProcess) {
@@ -114,11 +115,6 @@ export default class ObsMusic {
                 if (!radio.ffmpegProcess.kill()) {
                     throw new Error(`Could not kill radio ffmpeg process.`)
                 }
-            }
-            if (radio.passThrough) {
-                try {
-                    radio.passThrough?.destroy()
-                } catch(err) {}
             }
             radio.ffmpegProcess = spawn('ffmpeg', [
                 '-re',
@@ -133,12 +129,14 @@ export default class ObsMusic {
                 '2',
                 'pipe:1'
             ], { stdio: ['ignore', 'pipe', 'pipe'] });
+            if (radio.passThrough) {
+                radio.passThrough.destroy()
+            }
             radio.passThrough = new PassThrough()
             radio.ffmpegProcess.stdout!.pipe(radio.passThrough);
             radio.ffmpegProcess.on('close', async(code) => {
                 console.log('FFmpeg exited with code', code)
-                radio.connection?.destroy()
-                radio.passThrough?.destroy()
+                try { radio.connection?.destroy() } catch(err) {}
                 radio.ffmpegProcess?.removeAllListeners()
                 radio.ffmpegProcess?.kill('SIGKILL')
                 await channel.send(`OBS audio exited with code: ${code}`)
@@ -169,22 +167,9 @@ export default class ObsMusic {
             try {
                 console.log('Idle, restarting');
 
-                const retryDelay = 5000; // 5 seconds
-
+                // Restart
                 const resource = await createPCMStream(radio, `rtmp://hurx.io:8000/live/${streamKey}`);
                 player.play(resource);
-                if (resource.ended) {
-                    await new Promise(res => setTimeout(res, retryDelay));
-                }
-                else {
-                    return
-                }
-
-                // Cleanup
-                radio.ffmpegProcess?.removeAllListeners()
-                radio.ffmpegProcess?.kill('SIGKILL')
-                radio.connection?.destroy()
-                radio.passThrough.destroy()
             }
             catch (err) {
                 console.error(`Restart failed`, err)
@@ -198,8 +183,7 @@ export default class ObsMusic {
             // Cleanup
             radio.ffmpegProcess?.removeAllListeners()
             radio.ffmpegProcess?.kill('SIGKILL')
-            radio.connection?.destroy()
-            radio.passThrough.destroy()
+            try { radio.connection?.destroy() } catch(err) {}
             await channel.send(`OBS audio player exited with code: ${error.message}`)
         });
         player.play(opus)
