@@ -40,10 +40,6 @@ export default class ObsMusic {
             await interaction.editReply('❌ You\'re not in the discord.')
             return
         }
-        if (!member.roles.cache.has(Variables.var.StaffRole)) {
-            await interaction.editReply('❌ You need to be staff to use this command, sorry :).')
-            return
-        }
         let streamKey = ''
         for (const app of apps) {
             if (app.streamKey) {
