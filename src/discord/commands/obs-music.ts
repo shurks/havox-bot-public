@@ -70,7 +70,6 @@ export default class ObsMusic {
             await interaction.editReply('❌ Wrong radio bot, sorry.')
             return
         }
-        console.log('TOKEN: ' + discordRadio.token)
         guild = await discordRadio.guilds.fetch(Variables.var.Guild)
         channel = await guild.channels.fetch(channel.id) as VoiceChannel
         if (!channel) {
