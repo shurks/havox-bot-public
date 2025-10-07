@@ -115,24 +115,24 @@ export default class Bot {
         }
     }
 
-    public static running = false
+    public static running = true
 
     private static runCronJobs = async() => {
         let counter = 0
+        const processAllMembers = async() => {
+            console.log('Processing all members')
+            await ProcessAllMembersTask.main()
+            console.log('✅')
+        }
+        const processFrequent = async() => {
+            console.log('Sorting categories')
+            await SortRelationManager.main()
+            console.log('Updating hall of fame')
+            await Stats.updateHallOfFame()
+            console.log('✅')
+        }
         while (this.running) {
-            const processAllMembers = async() => {
-                console.log('Processing all members')
-                await ProcessAllMembersTask.main()
-                console.log('✅')
-            }
-            const processFrequent = async() => {
-                console.log('Sorting categories')
-                await SortRelationManager.main()
-                console.log('Updating hall of fame')
-                await Stats.updateHallOfFame()
-                console.log('✅')
-            }
-            await new Promise<void>(res => setTimeout(res, 5 * 60 * 1000))
+            await new Promise<void>((res, rej) => setTimeout(res, 1000 * 60 * 5))
             await processAllMembers()
             await processFrequent() 
             if (++counter % 12 === 0) {
