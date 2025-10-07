@@ -129,7 +129,7 @@ export default class Bot {
         console.log('✅')
     }
 
-    private static initializeDataSource = async() => {
+    public static initializeDataSource = async() => {
         console.log('Configuring database')
         try {
             // Create new migration, if applicable
