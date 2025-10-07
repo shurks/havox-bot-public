@@ -20,6 +20,8 @@ import { AudioPlayer } from "@discordjs/voice";
 import ObsMusic from "./commands/obs-music";
 import InitializeTicket from "./commands/admin/initialize-ticket";
 import DeleteRSN from "./commands/admin/delete-rsn";
+import { RadioBot } from "../entities/radio-bot";
+import { PassThrough } from "stream";
 
 const rankChoices = Object.entries(Variables.var.Emojis).map(([k, v]) => {
     // TODO: calculate
@@ -168,15 +170,64 @@ export default class Discord {
             .setName('unarchive')
             .setDescription('Unarchives the user in this ticket and puts him/her back in the clan.'),
         new SlashCommandBuilder()
-            .setName('obs-music')
-            .setDescription('Invites the discord bot to this voice channel to play the audio from Lijk\'s obs with his stream key.'),
-        new SlashCommandBuilder()
             .setName('set-stream-key')
             .setDescription('Sets your streamkey for OBS streaming to rtmp://hurx.io:8000/live')
             .addStringOption(string => string.setName('key').setDescription('Your stream key, it can be whatever.').setRequired(true))
     ]
 
     public static client: Client
+
+    public static radios: Record<string, Client> = {}
+    
+    public static radioBot = async(appId: string, token: string) => {
+        return new Promise<void>(async (res, rej) => {
+            const radio = new Client({
+                intents: [
+                    GatewayIntentBits.Guilds,
+                    GatewayIntentBits.GuildMessages,
+                    GatewayIntentBits.MessageContent,
+                    GatewayIntentBits.GuildMessageReactions,
+                    GatewayIntentBits.GuildMembers,
+                    GatewayIntentBits.GuildVoiceStates
+                ],
+                partials: [
+                    Partials.Message,
+                    Partials.Channel,
+                    Partials.Reaction,
+                    Partials.User,
+                ]
+            });
+            
+            await radio.login(token);
+
+            radio.on(Events.InteractionCreate, async (interaction: Interaction) => {
+                if (!interaction.isChatInputCommand()) return
+
+                await interaction.deferReply()
+    
+                let promise: Promise<any> = Promise.resolve()
+    
+                switch (interaction.commandName) {
+                    case 'obs-music': {
+                        promise = ObsMusic.main(interaction)
+                        break
+                    }
+                }
+    
+                try {
+                    await promise
+                }
+                catch (err) {
+                    console.error(err)
+                    await interaction.editReply("❌ Something went wrong with a request to discord, please try again in 30 minutes.");
+                }
+            })
+
+            this.radios[token] = radio
+
+            return res()
+        })
+    }
 
     /**
      * Initialize the discord bot
@@ -204,6 +255,32 @@ export default class Discord {
                 res()
             });
             
+            this.client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
+                if (oldState.channel && oldState.channel.id !== newState.channel?.id && oldState.channelId) {
+                    const repo = Bot.dataSource.getRepository(RadioBot)
+                    const discordRadio = await repo.findOne({
+                        where: {
+                            channel: oldState.channelId
+                        }
+                    })
+                    if (!discordRadio) return
+                    const radio = ObsMusic.radios[discordRadio.token]
+                    if (!radio) return
+                    if (radio.passThrough) {
+                        try {
+                            radio.passThrough.destroy()
+                        } catch (err) {}
+                    }
+                    radio.passThrough = radio.passThrough || new PassThrough()
+                    if (radio.connection) {
+                        try {
+                            radio.connection.destroy()
+                        } catch (err) {}
+                    }
+                    delete ObsMusic.radios[discordRadio.token]
+                }
+            })
+
             this.client.on(Events.MessageCreate, async (message) => {
                 if (message.author.bot) return;
                 if (message.content === '!delete-all-messages') {
@@ -335,7 +412,7 @@ export default class Discord {
                 }
             })
             
-            this.client.login(Variables.env.DISCORD_TOKEN);
+            await this.client.login(Variables.env.DISCORD_TOKEN);
     
             const rest = new REST({ version: '10' }).setToken(Variables.env.DISCORD_TOKEN!)
             await rest.put(

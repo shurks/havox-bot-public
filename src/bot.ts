@@ -11,9 +11,10 @@ import SortRelationManager from './discord/tasks/sort-relation-manager';
 import Stats from './discord/commands/stats';
 import { readdirSync, readFileSync, rmSync } from 'fs';
 import Variables from './variables';
-import { TextChannel } from 'discord.js';
+import { PermissionFlagsBits, PermissionsBitField, REST, Routes, TextChannel, VoiceChannel } from 'discord.js';
 import ProcessAllMembersTask from './discord/tasks/process-all-members-task';
 import { Metadata } from './entities/metadata';
+import { RadioBot } from './entities/radio-bot';
 dotenv.config();
 
 export default class Bot {
@@ -29,6 +30,42 @@ export default class Bot {
         }
         console.log('Starting discord bot')
         await Discord.main()
+        console.log('Starting discord radio bots')
+        const botRepo = Bot.dataSource.getRepository(RadioBot)
+        const bots = await botRepo.find()
+        const requiredPermissions = new PermissionsBitField([
+            PermissionFlagsBits.Connect,
+            PermissionFlagsBits.Speak,
+            PermissionFlagsBits.ViewChannel,
+            PermissionFlagsBits.SendMessages,
+            PermissionFlagsBits.ReadMessageHistory,
+            PermissionFlagsBits.AddReactions,
+            PermissionFlagsBits.UseVAD,
+        ]);
+        for (const bot of bots) {
+            await Discord.radioBot(bot.appId, bot.token)
+            const guild = await Discord.client.guilds.fetch(Variables.var.Guild)
+            if (guild) {
+                const channel = await guild.channels.fetch(bot.channel) as VoiceChannel
+                if (channel) {
+                    const radio = Discord.radios[bot.token]
+                    if (radio.user) {
+                        const user = await guild.members.fetch(radio.user.id)
+                        if (user) {
+                            const permissions = channel.permissionsFor(user.id)
+                            const missing = requiredPermissions
+                                .toArray()
+                                .filter(perm => !permissions?.has(perm));
+                            if (missing.length > 0) {
+                                await channel.permissionOverwrites.edit(user.id, Object.fromEntries(
+                                    missing.map(perm => [perm, true])
+                                ))
+                            }
+                        }
+                    }
+                }
+            }
+        }
         console.log('Starting twitch bot')
         await Twitch.main()
         console.log('Processing commits')
