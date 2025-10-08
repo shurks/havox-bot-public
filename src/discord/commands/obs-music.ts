@@ -154,10 +154,6 @@ export default class ObsMusic {
         player.on(AudioPlayerStatus.Playing, () => {
             console.log('Streaming RTMP audio into Discord!');
         });
-        player.on(AudioPlayerStatus.AutoPaused, (a, b) => {
-            console.log('Autopaused')
-            player.unpause()
-        })
         player.on(AudioPlayerStatus.Buffering, () => {
             console.log('Buffering')
         })

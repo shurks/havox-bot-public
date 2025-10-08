@@ -33,6 +33,15 @@ process.on('SIGTERM', () => {
     }
 });
 
+setInterval(() => {
+  const mem = process.memoryUsage().rss / 1024 / 1024;
+  if (mem > 1000) {
+    console.warn(`[NMS] High memory usage (${mem.toFixed(0)} MB) — restarting...`);
+    process.exit(1);
+  }
+  console.log(`Memory: ${mem.toFixed(0)} MB`)
+}, 60000);
+
 export default class Bot {
     public static dataSource: DataSource
 
@@ -110,8 +119,6 @@ export default class Bot {
                     }
                 }
             }
-            console.log('Starting twitch bot')
-            await Twitch.main()
             console.log('Processing commits')
             await this.processCommits()
         }
