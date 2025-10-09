@@ -141,6 +141,14 @@ export default class Bot {
             console.log('✅')
         }
         while (this.running) {
+            await processAllMembers()
+            await processFrequent() 
+            if (counter++ % 12 === 0) {
+                console.log('Approving/declining trialists')
+                await ApproveTrialistTask.main()
+                console.log('✅')
+            }
+            console.log('✅')
             await new Promise<void>((res, rej) => {
                 if (!this.sleep) {
                     this.sleep = setTimeout(() => {
@@ -149,14 +157,6 @@ export default class Bot {
                     }, 1000 * 60 * 5)
                 }
             })
-            await processAllMembers()
-            await processFrequent() 
-            if (++counter % 12 === 0) {
-                console.log('Approving/declining trialists')
-                await ApproveTrialistTask.main()
-                console.log('✅')
-            }
-            console.log('✅')
         }
     }
 

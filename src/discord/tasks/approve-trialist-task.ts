@@ -27,16 +27,16 @@ export default class ApproveTrialistTask {
         }
         const messages = await channels.trialists.messages.fetch({ limit: 100 })
         const repo = Bot.dataSource.getRepository(ClanApplication)
-        for (const [, message] of messages) {
-            if (!message.guild) continue
-            const member = await fetchOrNull('member', message.author.id)
-            if (!member) {
-                await message.delete()
-                continue
-            }
-            if (member.roles.cache.has(Variables.var.OwnerRole) && message.content.includes('❤️')) {
-                continue
-            }
+        const apps = await repo.find()
+        for (const app of apps) {
+            if (!app.messageIdTrialists?.length) return
+            if (!app.trial) return
+            const member = await fetchOrNull('member', app.userId)
+            if (!member) continue
+            const channel = await member.guild.channels.fetch(Variables.var.TrialistsChannel) as TextChannel
+            if (!channel) break
+            const message = await channel.messages.fetch(app.messageIdTrialists)
+            if (!message) break
             if (new Date().getTime() - message.createdTimestamp >= Variables.var.TrialDurationMs) {
                 // Find the clan application
                 const application = await repo.findOne({
