@@ -28,26 +28,16 @@ export default class ApproveTrialistTask {
         const messages = await channels.trialists.messages.fetch({ limit: 100 })
         const repo = Bot.dataSource.getRepository(ClanApplication)
         const apps = await repo.find()
-        for (const app of apps) {
-            if (!app.messageIdTrialists?.length) return
-            if (!app.trial) return
-            const member = await fetchOrNull('member', app.userId)
+        for (const application of apps) {
+            if (!application.messageIdTrialists?.length) continue
+            if (!application.trial) continue
+            const member = await fetchOrNull('member', application.userId)
             if (!member) continue
             const channel = await member.guild.channels.fetch(Variables.var.TrialistsChannel) as TextChannel
             if (!channel) break
-            const message = await channel.messages.fetch(app.messageIdTrialists)
-            if (!message) break
-            if (new Date().getTime() - message.createdTimestamp >= Variables.var.TrialDurationMs) {
-                // Find the clan application
-                const application = await repo.findOne({
-                    where: {
-                        messageIdTrialists: message.id
-                    }
-                })
-                if (!application) {
-                    continue
-                }
-
+            const message = await channel.messages.fetch(application.messageIdTrialists)
+            if (!message) continue
+            if (new Date().getTime() - Variables.var.TrialDurationMs > message.createdTimestamp) {
                 // Get the specific reactions by emoji
                 const heartReaction = message.reactions.cache.get('❤️');
                 const crossReaction = message.reactions.cache.get('❌');

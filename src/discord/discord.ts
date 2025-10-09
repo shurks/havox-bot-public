@@ -2,7 +2,6 @@ import { Client, Events, GatewayIntentBits, GuildScheduledEvent, Interaction, Me
 import Variables from "../variables";
 import CreateTicket from "./apply/create-ticket";
 import DeleteAllMessages from "./commands/admin/delete-all-messages";
-import { ClanApplication } from "../entities/clan-application";
 import Bot from "../bot";
 import ApplicantConfirmDeleted from "./commands/admin/applicant/applicant-confirm-deleted";
 import AddRSN from "./commands/admin/relation/add-rsn";
@@ -17,11 +16,13 @@ import Stats from "./commands/stats";
 import StartTrial from "./commands/admin/applicant/start-trial";
 import Archiver from "./commands/admin/relation/archiver";
 import { AudioPlayer } from "@discordjs/voice";
-import ObsMusic from "./commands/obs-music";
 import InitializeTicket from "./commands/admin/initialize-ticket";
 import DeleteRSN from "./commands/admin/delete-rsn";
 import { RadioBot } from "../entities/radio-bot";
 import { PassThrough } from "stream";
+import Voice from "./voice";
+import SetStreamKey from "./commands/set-stream-key";
+import { ClanApplication } from "../entities/clan-application";
 
 const rankChoices = Object.entries(Variables.var.Emojis).map(([k, v]) => {
     // TODO: calculate
@@ -241,22 +242,19 @@ export default class Discord {
                                 channel: oldState.channelId
                             }
                         })
-                        if (!discordRadio) return
-                        const radio = ObsMusic.radios[discordRadio.token]
-                        if (!radio) return
-                        if (radio.userId !== newState.member?.id) {
-                            return
+                        if (!discordRadio?.userId) return
+                        const appRepo = Bot.dataSource.getRepository(ClanApplication)
+                        const app = await appRepo.findOne({
+                            where: {
+                                userId: discordRadio.userId
+                            }
+                        })
+                        if (!app) return
+                        if (oldState.member?.user?.id === app.userId) {
+                            await Voice.closeStream(discordRadio.token)
+                            discordRadio.userId = null
+                            await repo.save(discordRadio)
                         }
-                        try {
-                            radio.connection?.destroy()
-                            radio.passThrough?.destroy()
-                            radio.ffmpegProcess?.removeAllListeners()
-                            radio.ffmpegProcess?.kill()
-                            delete ObsMusic.radios[discordRadio.token]
-                        }
-                        catch (err) {}
-                        discordRadio.userId = null
-                        await repo.save(discordRadio)
                     }
                 })
     
@@ -365,7 +363,7 @@ export default class Discord {
                             break
                         }
                         case 'set-stream-key': {
-                            promise = ObsMusic.setStreamKey(interaction)
+                            promise = SetStreamKey.main(interaction)
                             break
                         }
                         case 'initialize-ticket': {

@@ -11,14 +11,15 @@ import SortRelationManager from './discord/tasks/sort-relation-manager';
 import Stats from './discord/commands/stats';
 import { readdirSync, readFileSync, rmSync } from 'fs';
 import Variables from './variables';
-import { Guild, GuildMember, PermissionFlagsBits, PermissionsBitField, REST, Routes, TextChannel, VoiceChannel } from 'discord.js';
+import { Guild, GuildMember, PermissionFlagsBits, PermissionsBitField, REST, Routes, TextChannel, VoiceChannel, VoiceConnectionStates } from 'discord.js';
 import ProcessAllMembersTask from './discord/tasks/process-all-members-task';
 import { Metadata } from './entities/metadata';
 import { RadioBot } from './entities/radio-bot';
-import ObsMusic from './discord/commands/obs-music';
 import express, { Response } from 'express'
 import { ClanApplication } from './entities/clan-application';
 import { Server } from 'http';
+import Voice from './discord/voice';
+import { VoiceConnectionStatus } from '@discordjs/voice';
 dotenv.config();
 
 process.on('SIGINT', () => {
@@ -54,6 +55,8 @@ export default class Bot {
     public static dataSource: DataSource
 
     public static setResourceTimeOut: NodeJS.Timeout | null = null
+
+    public static closeStreamTimeOuts: Record<string, NodeJS.Timeout> = {}
 
     public static main = async (cron = false) => {
         console.log('Catching uncaught exceptions/rejections...')
@@ -189,26 +192,38 @@ export default class Bot {
         app.post('/done', async(req, res) => {
             const streamKey = req.body.name
             console.log(`Streaming done for ${streamKey}`)
-            const repo = Bot.dataSource.getRepository(ClanApplication);
-            const appEntry = await repo.findOne({ where: { streamKey } });
-            if (appEntry) {
-                const botRepo = Bot.dataSource.getRepository(RadioBot)
-                const bots = await botRepo.find({
-                    where: {
-                        userId: appEntry.userId
-                    }
-                })
-                for (const bot of bots) {
-                    bot.userId = null
-                    await botRepo.save(bot)
-                }
+
+            if (this.closeStreamTimeOuts[streamKey]) {
+                clearTimeout(this.closeStreamTimeOuts[streamKey])
             }
+
+            this.closeStreamTimeOuts[streamKey] = setTimeout(async() => {
+                const repo = Bot.dataSource.getRepository(ClanApplication);
+                const appEntry = await repo.findOne({ where: { streamKey } });
+                if (appEntry) {
+                    const botRepo = Bot.dataSource.getRepository(RadioBot)
+                    const bots = await botRepo.find({
+                        where: {
+                            userId: appEntry.userId
+                        }
+                    })
+                    for (const bot of bots) {
+                        bot.userId = null
+                        await botRepo.save(bot)
+                        await Voice.closeStream(bot.token)
+                    }
+                }
+            }, 5000)
         })
         app.post('/validate_key', async (req, res) => {
-            console.log(req.body)
             const streamKey = req.body.name; // 'name' = stream key from NGINX
             const repo = Bot.dataSource.getRepository(ClanApplication);
             const appEntry = await repo.findOne({ where: { streamKey } });
+
+            if (this.closeStreamTimeOuts[streamKey]) {
+                clearTimeout(this.closeStreamTimeOuts[streamKey])
+                delete this.closeStreamTimeOuts[streamKey]
+            }
 
             if (!appEntry) {
                 console.log(`[RTMP] Validate: Rejected invalid stream key: ${streamKey}`);
@@ -244,17 +259,8 @@ export default class Bot {
                     if (voiceChannelEntry.userId === member.id) {
                         console.log(`[RTMP] Validate: Voice channel bot is used by this user ("${streamKey}"), accepting.`)
                         res.on('finish', async () => {
-                            console.log('Finish')
-                            await ObsMusic.setResource({
-                                guild: guild,
-                                user: {
-                                    id: member.id
-                                },
-                                channelId: voiceChannelEntry.channel,
-                                editReply: async(msg: string) => {
-                                    console.log(`[RTMP] Validate: ${msg}`)
-                                }
-                            })
+                            console.log('Finish: Opening stream')
+                            await Voice.openStream(streamKey)
                         })
                         return res.sendStatus(200)
                     }
@@ -264,28 +270,9 @@ export default class Bot {
                             console.log(`[RTMP] Validate: User playing the bot is no member or not in voice channel, accepting.`)
                             voiceChannelEntry.userId = member.id
                             await repoRadio.save(voiceChannelEntry)
-                            await ObsMusic.connect({
-                                guild,
-                                channelId: voiceChannelEntry.channel,
-                                user: {
-                                    id: voiceChannelEntry.userId
-                                },
-                                editReply: async(val: string) => {
-                                    console.log(`[RTMP] Validate: ${val}`)
-                                }
-                            } as any)
                             res.on('finish', async () => {
-                                console.log('Finish')
-                                await ObsMusic.setResource({
-                                    guild: guild,
-                                    user: {
-                                        id: member.id
-                                    },
-                                    channelId: voiceChannelEntry.channel,
-                                    editReply: async(msg: string) => {
-                                        console.log(`[RTMP] Validate: ${msg}`)
-                                    }
-                                })
+                                console.log('Finish: Opening stream')
+                                await Voice.openStream(streamKey)
                             })
                             return res.sendStatus(200)
                         }
@@ -297,17 +284,8 @@ export default class Bot {
                     await repoRadio.save(voiceChannelEntry)
                     console.log(`[RTMP] Validate: Voice channel bot is now used by user "${member.displayName}" ("${streamKey}"), accepting.`)
                     res.on('finish', async () => {
-                        console.log('Finish')
-                        await ObsMusic.setResource({
-                            guild: guild,
-                            user: {
-                                id: member.id
-                            },
-                            channelId: voiceChannelEntry.channel,
-                            editReply: async(msg: string) => {
-                                console.log(`[RTMP] Validate: ${msg}`)
-                            }
-                        })
+                        console.log('Finish: Opening stream')
+                        await Voice.openStream(streamKey)
                     })
                     return res.sendStatus(200)
                 }
@@ -352,20 +330,11 @@ export default class Bot {
                 console.log(`[RTMP] Update: Bot has no user id ${bot.token}`)
                 return res.sendStatus(403)
             }
-            const botMember = await guild.members.fetch(bot.user.id)
-            if (botMember?.voice?.channelId !== radio.channel) {
+            const stream = Voice.streams[radio.token]
+            if (stream?.connection?.state.status !== VoiceConnectionStatus.Ready) {
                 res.on('finish', async () => {
-                    console.log('Finish')
-                    await ObsMusic.setResource({
-                        guild: guild,
-                        user: {
-                            id: member.id
-                        },
-                        channelId: radio.channel,
-                        editReply: async(msg: string) => {
-                            console.log(`[RTMP] Validate: ${msg}`)
-                        }
-                    })
+                    console.log('Finish: Opening stream')
+                    await Voice.openStream(streamKey)
                 })
             }
             res.sendStatus(200)

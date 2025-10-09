@@ -41,7 +41,7 @@ export default class ProcessAllMembersTask {
                 if (!app.archived) {
                     for (const a of apps.filter((v) => v.userId === app.userId)) {
                         a.userLeft = true
-                        a.archived = false
+                        a.archived = true
                         a.trial = false
                         a.approved = false
                         await repo.save(app)
