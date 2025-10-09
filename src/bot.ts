@@ -3,7 +3,7 @@ import Discord from './discord/discord';
 import Twitch from './twitch/twitch';
 import 'reflect-metadata'
 import Database from './database';
-import { DataSource } from 'typeorm';
+import { DataSource, UsingJoinColumnOnlyOnOneSideAllowedError } from 'typeorm';
 import { execSync } from 'child_process';
 import path from 'path';
 import ApproveTrialistTask from './discord/tasks/approve-trialist-task';
@@ -11,11 +11,14 @@ import SortRelationManager from './discord/tasks/sort-relation-manager';
 import Stats from './discord/commands/stats';
 import { readdirSync, readFileSync, rmSync } from 'fs';
 import Variables from './variables';
-import { PermissionFlagsBits, PermissionsBitField, REST, Routes, TextChannel, VoiceChannel } from 'discord.js';
+import { Guild, GuildMember, PermissionFlagsBits, PermissionsBitField, REST, Routes, TextChannel, VoiceChannel } from 'discord.js';
 import ProcessAllMembersTask from './discord/tasks/process-all-members-task';
 import { Metadata } from './entities/metadata';
 import { RadioBot } from './entities/radio-bot';
 import ObsMusic from './discord/commands/obs-music';
+import express, { Response } from 'express'
+import { ClanApplication } from './entities/clan-application';
+import { Server } from 'http';
 dotenv.config();
 
 process.on('SIGINT', () => {
@@ -24,28 +27,44 @@ process.on('SIGINT', () => {
     if (Bot.sleep) {
         clearTimeout(Bot.sleep)
     }
+    if (Bot.setResourceTimeOut) {
+        clearTimeout(Bot.setResourceTimeOut)
+    }
+    Bot.server?.close()
 });
+
 process.on('SIGTERM', () => {
     console.log('🛑 Caught SIGTERM, shutting down gracefully...');
     Bot.running = false;
     if (Bot.sleep) {
         clearTimeout(Bot.sleep)
     }
+    if (Bot.setResourceTimeOut) {
+        clearTimeout(Bot.setResourceTimeOut)
+    }
+    Bot.server?.close()
 });
 
-setInterval(() => {
-  const mem = process.memoryUsage().rss / 1024 / 1024;
-  if (mem > 1000) {
-    console.warn(`[NMS] High memory usage (${mem.toFixed(0)} MB) — restarting...`);
-    process.exit(1);
-  }
-  console.log(`Memory: ${mem.toFixed(0)} MB`)
-}, 60000);
 
 export default class Bot {
+    public static app: typeof express.application
+
+    public static server: Server
+
     public static dataSource: DataSource
 
+    public static setResourceTimeOut: NodeJS.Timeout | null = null
+
     public static main = async (cron = false) => {
+        console.log('Catching uncaught exceptions/rejections...')
+        process.on('uncaughtException', err => {
+            console.error('Uncaught Exception:', err);
+            process.exit(1)
+        });
+        process.on('unhandledRejection', err => {
+            console.error('Unhandled Rejection:', err);
+            process.exit(1)
+        });
         console.log('Initializing data source')
         await this.initializeDataSource()
         const repo = Bot.dataSource.getRepository(Metadata)
@@ -54,7 +73,7 @@ export default class Bot {
             (Variables.env as any)[m.key] = m.value
         }
         console.log('Starting discord bot')
-        await Discord.main()
+        await Discord.main(cron)
         if (!cron) {
             console.log('Starting discord radio bots')
             const botRepo = Bot.dataSource.getRepository(RadioBot)
@@ -71,33 +90,6 @@ export default class Bot {
             for (const bot of bots) {
                 const guild = await Discord.client.guilds.fetch(Variables.var.Guild)
                 await Discord.radioBot(bot.appId, bot.token)
-                if (bot.userId) {
-                    const botMember = await guild.members.fetch(bot.userId)
-                    const voiceChannel = botMember.voice.channel;
-    
-                    if (voiceChannel) {
-                        await ObsMusic.main({
-                            guild: guild,
-                            channelId: bot.channel,
-                            user: {
-                                id: bot.userId
-                            },
-                            editReply: () => {}
-                        } as any, true)
-                        await voiceChannel?.send(`✅ Resumed audio, user is still here after update.`)
-                    }
-                    else {
-                        const radio = Discord.radios[bot.token]
-                        if (radio?.user) {
-                            const botMember = await guild.members.fetch(radio.user.id)
-                            const voiceChannel = botMember.voice.channel;
-                            await botMember.voice.disconnect()
-                            await voiceChannel?.send(`✅ Disconnected audio, user is no longer here after update.`)
-                        }
-                        bot.userId = null
-                        await botRepo.save(bot)
-                    }
-                }
                 if (guild) {
                     const channel = await guild.channels.fetch(bot.channel) as VoiceChannel
                     if (channel) {
@@ -121,6 +113,8 @@ export default class Bot {
             }
             console.log('Processing commits')
             await this.processCommits()
+            console.log('Initializing express')
+            this.initializeExpress()
         }
         else {
             console.log('Running cronjobs')
@@ -188,8 +182,199 @@ export default class Bot {
         }
     }
 
+    public static initializeExpress = async() => {
+        const app = express();
+        app.use(express.urlencoded({ extended: true })); // nginx sends x-www-form-urlencoded
+        // Validate stream key before publishing
+        app.post('/done', async(req, res) => {
+            const streamKey = req.body.name
+            console.log(`Streaming done for ${streamKey}`)
+            const repo = Bot.dataSource.getRepository(ClanApplication);
+            const appEntry = await repo.findOne({ where: { streamKey } });
+            if (appEntry) {
+                const botRepo = Bot.dataSource.getRepository(RadioBot)
+                const bots = await botRepo.find({
+                    where: {
+                        userId: appEntry.userId
+                    }
+                })
+                for (const bot of bots) {
+                    bot.userId = null
+                    await botRepo.save(bot)
+                }
+            }
+        })
+        app.post('/validate_key', async (req, res) => {
+            console.log(req.body)
+            const streamKey = req.body.name; // 'name' = stream key from NGINX
+            const repo = Bot.dataSource.getRepository(ClanApplication);
+            const appEntry = await repo.findOne({ where: { streamKey } });
+
+            if (!appEntry) {
+                console.log(`[RTMP] Validate: Rejected invalid stream key: ${streamKey}`);
+                return res.status(403).send('Forbidden');
+            }
+
+            const guild = await Discord.client.guilds.fetch(Variables.var.Guild)
+            if (!guild) {
+                console.log(`[RTMP] Validate: Guild does not exist. ("${streamKey}")`)
+                return res.status(403).send('Forbidden');
+            }
+
+            const member = await guild.members.fetch(appEntry.userId)
+            if (!member) {
+                console.log(`[RTMP] Validate: Member is not in guild. ("${streamKey}")`)
+                return res.status(403).send('Forbidden');
+            }
+
+            const repoRadio = Bot.dataSource.getRepository(RadioBot);
+            let voiceChannel = member.voice.channel
+            if (voiceChannel) {
+                const voiceChannelEntry = await repoRadio.findOne({
+                    where: {
+                        channel: voiceChannel.id
+                    }
+                })
+                if (!voiceChannelEntry) {
+                    console.log(`[RTMP] Validate: There's no voice bot for this voice channel. ("${streamKey}`)
+                    console.log({ channelID: voiceChannel.id })
+                    return res.sendStatus(403)
+                }
+                if (voiceChannelEntry.userId) {
+                    if (voiceChannelEntry.userId === member.id) {
+                        console.log(`[RTMP] Validate: Voice channel bot is used by this user ("${streamKey}"), accepting.`)
+                        res.on('finish', async () => {
+                            console.log('Finish')
+                            await ObsMusic.setResource({
+                                guild: guild,
+                                user: {
+                                    id: member.id
+                                },
+                                channelId: voiceChannelEntry.channel,
+                                editReply: async(msg: string) => {
+                                    console.log(`[RTMP] Validate: ${msg}`)
+                                }
+                            })
+                        })
+                        return res.sendStatus(200)
+                    }
+                    else {
+                        const otherMember = await guild.members.fetch(voiceChannelEntry.userId)
+                        if (!otherMember || otherMember.voice?.channelId !== voiceChannelEntry.channel) {
+                            console.log(`[RTMP] Validate: User playing the bot is no member or not in voice channel, accepting.`)
+                            voiceChannelEntry.userId = member.id
+                            await repoRadio.save(voiceChannelEntry)
+                            await ObsMusic.connect({
+                                guild,
+                                channelId: voiceChannelEntry.channel,
+                                user: {
+                                    id: voiceChannelEntry.userId
+                                },
+                                editReply: async(val: string) => {
+                                    console.log(`[RTMP] Validate: ${val}`)
+                                }
+                            } as any)
+                            res.on('finish', async () => {
+                                console.log('Finish')
+                                await ObsMusic.setResource({
+                                    guild: guild,
+                                    user: {
+                                        id: member.id
+                                    },
+                                    channelId: voiceChannelEntry.channel,
+                                    editReply: async(msg: string) => {
+                                        console.log(`[RTMP] Validate: ${msg}`)
+                                    }
+                                })
+                            })
+                            return res.sendStatus(200)
+                        }
+                        return res.sendStatus(403)
+                    }
+                }
+                else {
+                    voiceChannelEntry.userId = member.id
+                    await repoRadio.save(voiceChannelEntry)
+                    console.log(`[RTMP] Validate: Voice channel bot is now used by user "${member.displayName}" ("${streamKey}"), accepting.`)
+                    res.on('finish', async () => {
+                        console.log('Finish')
+                        await ObsMusic.setResource({
+                            guild: guild,
+                            user: {
+                                id: member.id
+                            },
+                            channelId: voiceChannelEntry.channel,
+                            editReply: async(msg: string) => {
+                                console.log(`[RTMP] Validate: ${msg}`)
+                            }
+                        })
+                    })
+                    return res.sendStatus(200)
+                }
+            }
+            else {
+                console.log(`[RTMP] Validate: User is not in a voice channel. ("${streamKey}")`)
+                return res.sendStatus(403)
+            }
+        });
+        app.post('/update', async (req, res) => {
+            const streamKey = req.body.name; // 'name' = stream key from NGINX
+            const repo = Bot.dataSource.getRepository(ClanApplication);
+            const appEntry = await repo.findOne({ where: { streamKey } });
+            if (!appEntry) {
+                console.log(`[RTMP] Update: stream key "${streamKey}" does not have an app entry, disconnecting.`);
+                return res.sendStatus(403)
+            }
+            const repoRadioBot = Bot.dataSource.getRepository(RadioBot);
+            const radio = await repoRadioBot.findOne({ where: { userId: appEntry?.userId } });
+            if (!radio) {
+                console.log(`[RTMP] Update: stream key "${streamKey}" is not being used, disconnecting.`);
+                return res.sendStatus(403)
+            }
+            // Check if user is in voice
+            const guild = await Discord.client.guilds.fetch(Variables.var.Guild)
+            if (!guild) {
+                console.log(`[RTMP] Update: Guild is not found "${streamKey}"`);
+                return res.sendStatus(403)
+            }
+            const member = await guild.members.fetch(appEntry.userId)
+            if (!member) {
+                console.log(`[RTMP] Update: Member is not found "${streamKey}"`);
+                return res.sendStatus(403)
+            }
+            if (member.voice?.channelId !== radio.channel) {
+                console.log(`[RTMP] Update: Member is not in radio channel "${streamKey}"`)
+                return res.sendStatus(403)
+            }
+            console.log(`[RTMP] Update: stream key "${streamKey}" is active, OK.`);
+            const bot = Discord.radios[radio.token]
+            if (!bot.user?.id) {
+                console.log(`[RTMP] Update: Bot has no user id ${bot.token}`)
+                return res.sendStatus(403)
+            }
+            const botMember = await guild.members.fetch(bot.user.id)
+            if (botMember?.voice?.channelId !== radio.channel) {
+                res.on('finish', async () => {
+                    console.log('Finish')
+                    await ObsMusic.setResource({
+                        guild: guild,
+                        user: {
+                            id: member.id
+                        },
+                        channelId: radio.channel,
+                        editReply: async(msg: string) => {
+                            console.log(`[RTMP] Validate: ${msg}`)
+                        }
+                    })
+                })
+            }
+            res.sendStatus(200)
+        })
+        this.server = app.listen(3000, () => console.log('Auth API listening on port 3000'));
+        this.app = app
+    }
+
     private static processCommits = async() => {
-        console.log('Processing commits')
         const guild = await Discord.client.guilds.fetch(Variables.var.Guild)
         if (guild) {
             const channel = await guild.channels.fetch("1423083129358385312") as TextChannel

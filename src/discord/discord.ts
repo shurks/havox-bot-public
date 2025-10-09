@@ -200,29 +200,6 @@ export default class Discord {
             
             await radio.login(token);
 
-            radio.on(Events.InteractionCreate, async (interaction: Interaction) => {
-                if (!interaction.isChatInputCommand()) return
-
-                await interaction.deferReply()
-    
-                let promise: Promise<any> = Promise.resolve()
-    
-                switch (interaction.commandName) {
-                    case 'obs-music': {
-                        promise = ObsMusic.main(interaction)
-                        break
-                    }
-                }
-    
-                try {
-                    await promise
-                }
-                catch (err) {
-                    console.error(err)
-                    await interaction.editReply("❌ Something went wrong with a request to discord, please try again in 30 minutes.");
-                }
-            })
-
             this.radios[token] = radio
 
             return res()
@@ -232,7 +209,7 @@ export default class Discord {
     /**
      * Initialize the discord bot
      */
-    public static main = async () => {
+    public static main = async (cron = false) => {
         return new Promise<void>(async (res, rej) => {
             this.client = new Client({
                 intents: [
@@ -251,164 +228,165 @@ export default class Discord {
                 ]
             });
             
-            this.client.on('ready', async() => {
+            this.client.on(Events.ClientReady, async() => {
                 res()
             });
             
-            this.client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
-                if (oldState.channel && oldState.channel.id !== newState.channel?.id && oldState.channelId) {
-                    const repo = Bot.dataSource.getRepository(RadioBot)
-                    const discordRadio = await repo.findOne({
-                        where: {
-                            channel: oldState.channelId
+            if (!cron) {
+                this.client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
+                    if (oldState.channel && oldState.channel.id !== newState.channel?.id && oldState.channelId) {
+                        const repo = Bot.dataSource.getRepository(RadioBot)
+                        const discordRadio = await repo.findOne({
+                            where: {
+                                channel: oldState.channelId
+                            }
+                        })
+                        if (!discordRadio) return
+                        const radio = ObsMusic.radios[discordRadio.token]
+                        if (!radio) return
+                        if (radio.userId !== newState.member?.id) {
+                            return
                         }
-                    })
-                    if (!discordRadio) return
-                    const radio = ObsMusic.radios[discordRadio.token]
-                    if (!radio) return
-                    if (radio.userId !== newState.member?.id) {
-                        return
+                        try {
+                            radio.connection?.destroy()
+                            radio.passThrough?.destroy()
+                            radio.ffmpegProcess?.removeAllListeners()
+                            radio.ffmpegProcess?.kill()
+                            delete ObsMusic.radios[discordRadio.token]
+                        }
+                        catch (err) {}
+                        discordRadio.userId = null
+                        await repo.save(discordRadio)
                     }
-                    radio.connection?.destroy()
-                    radio.passThrough?.destroy()
-                    radio.ffmpegProcess?.removeAllListeners()
-                    radio.ffmpegProcess?.kill()
-                    delete ObsMusic.radios[discordRadio.token]
-                    discordRadio.userId = null
-                    await repo.save(discordRadio)
-                }
-            })
-
-            this.client.on(Events.MessageCreate, async (message) => {
-                if (message.author.bot) return;
-                if (message.content === '!delete-all-messages') {
-                    await DeleteAllMessages.run(message)
-                }
-                else if (message.channel.id === Variables.var.ApplyChannel) {
-                    await CreateTicket.run(message)
-                }
-                else if ([
-                    Variables.var.NewMembersChannel,
-                    Variables.var.RareDropsChannel,
-                    Variables.var.AchievementsChannel,
-                    Variables.var.RankupsChannel,
-                    Variables.var.AllroundIronmanChannel,
-                    "1423868344070836325" //Music
-                ].includes(message.channelId)) {
-                    await message.react('❤️')
-                    await message.react('🔥')
-                }
-                else if (message.channelId === Variables.var.MemesChannel) {
-                    await message.react('😂')
-                    await message.react('🔥')
-                }
-            });
+                })
     
-            this.client.on(Events.MessageReactionAdd, async (
-                reaction: MessageReaction | PartialMessageReaction,
-                user: User | PartialUser
-            ) => {
-                if (user.bot) return
-                // When a reaction is received, check if the structure is partial
-                if (reaction.partial) {
-                    // If the message this reaction belongs to was removed, the fetching might result in an API error which should be handled
+                this.client.on(Events.MessageCreate, async (message) => {
+                    if (message.author.bot) return;
+                    if (message.content === '!delete-all-messages') {
+                        await DeleteAllMessages.run(message)
+                    }
+                    else if (message.channel.id === Variables.var.ApplyChannel) {
+                        await CreateTicket.run(message)
+                    }
+                    else if ([
+                        Variables.var.NewMembersChannel,
+                        Variables.var.RareDropsChannel,
+                        Variables.var.AchievementsChannel,
+                        Variables.var.RankupsChannel,
+                        Variables.var.AllroundIronmanChannel,
+                        "1423868344070836325" //Music
+                    ].includes(message.channelId)) {
+                        await message.react('❤️')
+                        await message.react('🔥')
+                    }
+                    else if (message.channelId === Variables.var.MemesChannel) {
+                        await message.react('😂')
+                        await message.react('🔥')
+                    }
+                });
+        
+                this.client.on(Events.MessageReactionAdd, async (
+                    reaction: MessageReaction | PartialMessageReaction,
+                    user: User | PartialUser
+                ) => {
+                    if (user.bot) return
+                    // When a reaction is received, check if the structure is partial
+                    if (reaction.partial) {
+                        // If the message this reaction belongs to was removed, the fetching might result in an API error which should be handled
+                        try {
+                            await reaction.fetch();
+                        } catch (error) {
+                            console.error('Something went wrong when fetching the message:', error);
+                            // Return as `reaction.message.author` may be undefined/null
+                            return;
+                        }
+                    }
+                })
+        
+                this.client.on(Events.InteractionCreate, async (interaction: Interaction) => {
+                    if (!interaction.isChatInputCommand()) return
+    
+                    await interaction.deferReply()
+        
+                    let promise: Promise<any> = Promise.resolve()
+        
+                    switch (interaction.commandName) {
+                        case 'start-trial': {
+                            promise = StartTrial.main(interaction)
+                            break
+                        }
+                        case 'applicant-confirm-deleted': {
+                            promise = ApplicantConfirmDeleted.main(interaction)
+                            break
+                        }
+                        case 'add-rsn': {
+                            promise = AddRSN.main(interaction)
+                            break
+                        }
+                        case 'set-twitter': {
+                            promise = SetTwitter.main(interaction)
+                            break
+                        }
+                        case 'set-rsn': {
+                            promise = RelationSetRSN.main(interaction)
+                            break
+                        }
+                        case 'set-rank': {
+                            promise = RelationSetRank.main(interaction)
+                            break
+                        }
+                        case 'request-rank': {
+                            promise = RelationRequestRank.main(interaction)
+                            break
+                        }
+                        case 'twitter': {
+                            promise = Twitter.main(interaction)
+                            break
+                        }
+                        case 'rsn': {
+                            promise = RSN.main(interaction)
+                            break
+                        }
+                        case 'stats': {
+                            promise = Stats.main(interaction)
+                            break
+                        }
+                        case 'twitters': {
+                            promise = Twitters.main(interaction)
+                            break
+                        }
+                        case 'archive': {
+                            // TODO: threads for crons
+                            promise = Archiver.archive(interaction)
+                            break
+                        }
+                        case 'unarchive': {
+                            promise = Archiver.unarchive(interaction)
+                            break
+                        }
+                        case 'set-stream-key': {
+                            promise = ObsMusic.setStreamKey(interaction)
+                            break
+                        }
+                        case 'initialize-ticket': {
+                            promise = InitializeTicket.main(interaction)
+                            break
+                        }
+                        case 'delete-rsn': {
+                            promise = DeleteRSN.main(interaction)
+                            break
+                        }
+                    }
+        
                     try {
-                        await reaction.fetch();
-                    } catch (error) {
-                        console.error('Something went wrong when fetching the message:', error);
-                        // Return as `reaction.message.author` may be undefined/null
-                        return;
+                        await promise
                     }
-                }
-            })
-    
-            this.client.on(Events.InteractionCreate, async (interaction: Interaction) => {
-                if (!interaction.isChatInputCommand()) return
-
-                await interaction.deferReply()
-    
-                let promise: Promise<any> = Promise.resolve()
-    
-                switch (interaction.commandName) {
-                    case 'obs-music': {
-                        promise = ObsMusic.main(interaction)
-                        break
+                    catch (err) {
+                        console.error(err)
+                        await interaction.editReply("❌ Something went wrong with a request to discord, please try again in 30 minutes.");
                     }
-                    case 'start-trial': {
-                        promise = StartTrial.main(interaction)
-                        break
-                    }
-                    case 'applicant-confirm-deleted': {
-                        promise = ApplicantConfirmDeleted.main(interaction)
-                        break
-                    }
-                    case 'add-rsn': {
-                        promise = AddRSN.main(interaction)
-                        break
-                    }
-                    case 'set-twitter': {
-                        promise = SetTwitter.main(interaction)
-                        break
-                    }
-                    case 'set-rsn': {
-                        promise = RelationSetRSN.main(interaction)
-                        break
-                    }
-                    case 'set-rank': {
-                        promise = RelationSetRank.main(interaction)
-                        break
-                    }
-                    case 'request-rank': {
-                        promise = RelationRequestRank.main(interaction)
-                        break
-                    }
-                    case 'twitter': {
-                        promise = Twitter.main(interaction)
-                        break
-                    }
-                    case 'rsn': {
-                        promise = RSN.main(interaction)
-                        break
-                    }
-                    case 'stats': {
-                        promise = Stats.main(interaction)
-                        break
-                    }
-                    case 'twitters': {
-                        promise = Twitters.main(interaction)
-                        break
-                    }
-                    case 'archive': {
-                        // TODO: threads for crons
-                        promise = Archiver.archive(interaction)
-                        break
-                    }
-                    case 'unarchive': {
-                        promise = Archiver.unarchive(interaction)
-                        break
-                    }
-                    case 'set-stream-key': {
-                        promise = ObsMusic.setStreamKey(interaction)
-                        break
-                    }
-                    case 'initialize-ticket': {
-                        promise = InitializeTicket.main(interaction)
-                        break
-                    }
-                    case 'delete-rsn': {
-                        promise = DeleteRSN.main(interaction)
-                        break
-                    }
-                }
-    
-                try {
-                    await promise
-                }
-                catch (err) {
-                    console.error(err)
-                    await interaction.editReply("❌ Something went wrong with a request to discord, please try again in 30 minutes.");
-                }
-            })
+                })
+            }
             
             await this.client.login(Variables.env.DISCORD_TOKEN);
     
