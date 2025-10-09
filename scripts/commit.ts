@@ -7,8 +7,8 @@ console.log(commit)
 
 if (commit.length) {
     writeFileSync(path.join(__dirname, '../assets/commits/', new Date().toISOString() + '.txt'), commit)
-    execSync(`git add . && git commit -m "${commit}" && git push && pm2 kill && disc`)
+    execSync(`git add . && git commit -m "${commit}" && git push`)
 }
 else {
-    execSync(`git add . && git commit -m "This is a patch of previous commit." && git push && pm2 kill && disc`)
+    execSync(`git add . && git commit -m "This is a patch of previous commit." && git push`)
 }
