@@ -12,18 +12,17 @@ import RelationSetRSN from "./commands/relation/relation-set-rsn";
 import RelationSetRank from "./commands/admin/relation/set-rank";
 import RelationRequestRank from "./commands/relation/relation-request-rank";
 import RSN from "./commands/rsn";
-import Stats from "./commands/stats";
 import StartTrial from "./commands/admin/applicant/start-trial";
 import Archiver from "./commands/admin/relation/archiver";
 import { AudioPlayer } from "@discordjs/voice";
 import InitializeTicket from "./commands/admin/initialize-ticket";
 import DeleteRSN from "./commands/admin/delete-rsn";
 import { RadioBot } from "../entities/radio-bot";
-import { PassThrough } from "stream";
 import Voice from "./voice";
 import SetStreamKey from "./commands/set-stream-key";
 import { ClanApplication } from "../entities/clan-application";
 import Twitch from "../twitch/twitch";
+import Stats from "./commands/stats";
 
 const rankChoices = Object.entries(Variables.var.Emojis).map(([k, v]) => {
     // TODO: calculate
@@ -64,7 +63,7 @@ export default class Discord {
                     .setDescription("RSN of the applicant")
                     .setRequired(true)
             )
-            .addStringOption(option => 
+            .addStringOption(option =>
                 option.setName("rank")
                     .setDescription("What rank does the player get according to #havox-ranks?")
                     .setRequired(true)
@@ -89,11 +88,11 @@ export default class Discord {
             .setName('delete-rsn')
             .setDescription('Admin: Delete a RSN for a user within a ticket')
             .addStringOption(rsn => rsn.setRequired(true).setName('rsn').setDescription('The RSN to delete'))
-            ,
+        ,
         new SlashCommandBuilder()
             .setName('applicant-confirm-deleted')
             .setDescription('Admin: Confirms that an applicant is deleted from the clan in game, after failing the trial.')
-            .addStringOption(option => 
+            .addStringOption(option =>
                 option.setName('user-id')
                     .setDescription('The Discord User ID of the applicant, can be seen in develop mode and right clicking the user.')
                     .setRequired(true)
@@ -105,7 +104,7 @@ export default class Discord {
         new SlashCommandBuilder()
             .setName('set-twitter')
             .setDescription('Sets your twitter hook for others to see, must start with @')
-            .addStringOption(twitter => 
+            .addStringOption(twitter =>
                 twitter.setName('username')
                     .setDescription('Your @username')
                     .setRequired(true)
@@ -122,7 +121,7 @@ export default class Discord {
         new SlashCommandBuilder()
             .setName('set-rank')
             .setDescription('Admin: Use in a ticket, sets rank for user.')
-            .addStringOption(option => 
+            .addStringOption(option =>
                 option.setName("rank")
                     .setDescription("What rank does the player get according to #havox-ranks?")
                     .setRequired(true)
@@ -131,7 +130,7 @@ export default class Discord {
         new SlashCommandBuilder()
             .setName('request-rank')
             .setDescription('Requests a rank-up in the clan')
-            .addStringOption(option => 
+            .addStringOption(option =>
                 option.setName("rank")
                     .setDescription("What rank are you applying for")
                     .setRequired(true)
@@ -180,8 +179,8 @@ export default class Discord {
     public static client: Client
 
     public static radios: Record<string, Client> = {}
-    
-    public static radioBot = async(appId: string, token: string) => {
+
+    public static radioBot = async (appId: string, token: string) => {
         return new Promise<void>(async (res, rej) => {
             const radio = new Client({
                 intents: [
@@ -199,18 +198,18 @@ export default class Discord {
                     Partials.User,
                 ]
             });
-            
-		try {
-	    await radio.login(token);
-		}
-		catch (err) {
-if (err instanceof Error && err.message.includes("Not enough sessions remaining")) {
-    console.warn("Rate-limited by Discord. Retrying after cooldown...");
-    setTimeout(() => process.exit(1), 60 * 1000); // exit and let PM2 restart later
-  } else {
-    throw err;
-  }
-		}
+
+            try {
+                await radio.login(token);
+            }
+            catch (err) {
+                if (err instanceof Error && err.message.includes("Not enough sessions remaining")) {
+                    console.warn("Rate-limited by Discord. Retrying after cooldown...");
+                    setTimeout(() => process.exit(1), 60 * 1000); // exit and let PM2 restart later
+                } else {
+                    throw err;
+                }
+            }
 
             this.radios[token] = radio
 
@@ -239,11 +238,11 @@ if (err instanceof Error && err.message.includes("Not enough sessions remaining"
                     Partials.User,
                 ]
             });
-            
-            this.client.on(Events.ClientReady, async() => {
+
+            this.client.on(Events.ClientReady, async () => {
                 res()
             });
-            
+
             if (!cron) {
                 this.client.on(Events.VoiceStateUpdate, async (oldState, newState) => {
                     if (oldState.channel && oldState.channel.id !== newState.channel?.id && oldState.channelId) {
@@ -268,7 +267,7 @@ if (err instanceof Error && err.message.includes("Not enough sessions remaining"
                         }
                     }
                 })
-    
+
                 this.client.on(Events.MessageCreate, async (message) => {
                     if (message.author.bot) return;
                     if (message.content === '!delete-all-messages') {
@@ -296,7 +295,7 @@ if (err instanceof Error && err.message.includes("Not enough sessions remaining"
                         await Twitch.twitchClient.say('lijk1337', `${message.author.displayName}: ${message.content}`)
                     }
                 });
-        
+
                 this.client.on(Events.MessageReactionAdd, async (
                     reaction: MessageReaction | PartialMessageReaction,
                     user: User | PartialUser
@@ -314,14 +313,14 @@ if (err instanceof Error && err.message.includes("Not enough sessions remaining"
                         }
                     }
                 })
-        
+
                 this.client.on(Events.InteractionCreate, async (interaction: Interaction) => {
                     if (!interaction.isChatInputCommand()) return
-    
+
                     await interaction.deferReply()
-        
+
                     let promise: Promise<any> = Promise.resolve()
-        
+
                     switch (interaction.commandName) {
                         case 'start-trial': {
                             promise = StartTrial.main(interaction)
@@ -389,7 +388,7 @@ if (err instanceof Error && err.message.includes("Not enough sessions remaining"
                             break
                         }
                     }
-        
+
                     try {
                         await promise
                     }
@@ -399,19 +398,18 @@ if (err instanceof Error && err.message.includes("Not enough sessions remaining"
                     }
                 })
             }
-            
-   		try {
 
-	    await this.client.login(Variables.env.DISCORD_TOKEN);
-    	}
-	catch (err) {
-	if (err instanceof Error && err.message.includes("Not enough sessions remaining")) {
-    console.warn("Rate-limited by Discord. Retrying after cooldown...");
-    setTimeout(() => process.exit(1), 60 * 1000); // exit and let PM2 restart later
-  } else {
-    throw err;
-  }
-	}
+            try {
+                await this.client.login(Variables.env.DISCORD_TOKEN);
+            }
+            catch (err) {
+                if (err instanceof Error && err.message.includes("Not enough sessions remaining")) {
+                    console.warn("Rate-limited by Discord. Retrying after cooldown...");
+                    setTimeout(() => process.exit(1), 60 * 1000); // exit and let PM2 restart later
+                } else {
+                    throw err;
+                }
+            }
 
             const rest = new REST({ version: '10' }).setToken(Variables.env.DISCORD_TOKEN!)
             await rest.put(

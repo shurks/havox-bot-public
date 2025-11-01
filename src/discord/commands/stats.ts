@@ -1,373 +1,125 @@
-import { ChatInputCommandInteraction, Guild, GuildMember, Message, TextChannel, User } from "discord.js";
-import Bot from "../../bot";
-import { ClanApplication } from "../../entities/clan-application";
-import Discord from "../discord";
-import Variables from "../../variables";
-import { existsSync, lstat, lstatSync, mkdir, mkdirSync, readFileSync, writeFileSync } from "fs";
-import path from "path";
+import { existsSync, mkdirSync, readdirSync, readFile, readFileSync, rmSync, writeFileSync } from "fs"
+import path, { join } from "path"
 import * as cheerio from 'cheerio'
-import { Not } from "typeorm";
-import fetchOrNull from "../fetchOrNull";
+import Variables from "../../variables"
+import Discord from "../discord"
+import Bot from "../../bot"
+import { ClanApplication } from "../../entities/clan-application"
+import { ChatInputCommandInteraction, Guild, Interaction, TextChannel } from "discord.js"
 
+export const Skills = (<Skill extends string>(...skills: Skill[]) => {
+    return skills
+})(
+    'Attack', 'Strength', 'Defence', 'Ranged', 'Prayer', 'Magic', 'Runecraft', 'Hitpoints',
+    'Crafting', 'Mining', 'Smithing', 'Fishing', 'Cooking', 'Firemaking', 'Woodcutting', 'Agility',
+    'Herblore', 'Thieving', 'Fletching', 'Slayer', 'Farming', 'Construction', 'Hunter', 'Overall'
+)
+export type Skills = typeof Skills[number]
+export type UserStats = {
+    updated: number
+    clog: {
+        categories: {
+            green: number,
+            total: number,
+            percentage: number
+        },
+        slots: {
+            current: {
+                temple: number
+                hiscores: number
+            }
+            percentage: number
+        },
+        hours: {
+            played: number,
+            percentage: number
+        }
+    },
+    bossing: {
+        hours: number,
+        bosses: Record<string, {
+            hours: number
+            kc: number
+        }>
+    },
+    skilling: Record<Skills, {
+        hours: {
+            played: number,
+            percentage: number
+        },
+        xp: number,
+        level: number,
+        rank: number
+    }> | null
+}
+export type CacheIndexFile = {
+    maxClogs: number,
+    records: Record<string, {
+        name: string
+        updated: number
+    }>
+}
+
+/**
+ * Retrieves stats
+ */
 export default class Stats {
-    public static main = async(interaction: ChatInputCommandInteraction) => {
-        const user = interaction.options.getUser('user', true)
-        const calculations = await this.calculateForUser(user)
-        await this.updateHallOfFame()
-        await interaction.editReply(calculations.response.trim())
-    }
+    /** One hour default max age */
+    public static defaultMaxAgeMs: number = 3600 * 1000
 
-    public static updateHallOfFame = async() => {
-        let calculations: Record<string, ReturnType<typeof Stats['calculateForUser']> extends Promise<infer A> ? A : null> = JSON.parse(readFileSync(path.join(__dirname, '../../../assets/all-user-information.json')).toString('utf8'))
-        let mostEHT = Object.entries(calculations).map((v) => [v[0], ({ userId: v[0], eht: v[1].ehtTotal})] as any).sort((x, y) => x[1].eht < y[1].eht ? 1 : x[1].eht > y[1].eht ? -1 : 0).filter((v, i) => i < 10)
-        let mostEHP = Object.entries(calculations).map((v) => [v[0], ({ userId: v[0], ehp: v[1].ehpTotal})] as any).sort((x, y) => x[1].ehp < y[1].ehp ? 1 : x[1].ehp > y[1].ehp ? -1 : 0).filter((v, i) => i < 10)
-        let mostXP = Object.entries(calculations).map((v) => [v[0], ({ userId: v[0], xp: v[1].xpTotal})] as any).sort((x, y) => x[1].xp < y[1].xp ? 1 : x[1].xp > y[1].xp ? -1 : 0).filter((v, i) => i < 10)
-        let mostEHB = Object.entries(calculations).map((v) => [v[0], ({ userId: v[0], ehb: v[1].ehbTotal})] as any).sort((x, y) => x[1].ehb < y[1].ehb ? 1 : x[1].ehb > y[1].ehb ? -1 : 0).filter((v, i) => i < 10)
-        let mostPerSkill: Record<string, Array<{ userId: string, xp: number, ehp: number }>> = {}
-        let mostCategories = Object.entries(calculations).sort(([x, xx], [y, yy]) => xx.highestCategories < yy.highestCategories ? 1 : xx.highestCategories > yy.highestCategories ? -1 : 0)
-        let mostClogs = Object.entries(calculations).sort(([x, xx], [y, yy]) => xx.highestClogs < yy.highestClogs ? 1 : xx.highestClogs > yy.highestClogs ? -1 : 0)
-        let mostEhc = Object.entries(calculations).sort(([x, xx], [y, yy]) => xx.ehcTotal < yy.ehcTotal ? 1 : xx.ehcTotal > yy.ehcTotal ? -1 : 0)
-        for (const calculation of Object.entries(calculations)) {
-            for (const [skill, v] of Object.entries(calculation[1].skills)) {
-                if (!mostPerSkill[skill]) {
-                    mostPerSkill[skill] = []
-                }
-                mostPerSkill[skill].push({
-                    ehp: calculation[1].ehp[skill] || 0,
-                    userId: calculation[1].userId,
-                    xp: calculation[1].skills[skill] || 0
-                })
-            }
-        }
-        for (const [skill, array] of Object.entries(mostPerSkill)) {
-            mostPerSkill[skill] = array.sort((x, y) => x.ehp < y.ehp ? 1 : x.ehp > y.ehp ? -1 : 0)
-        }
-        const sortedSkills = Object.entries(mostPerSkill)
-            .sort(([sx, ox], [sy, oy]) => (oy[0]?.ehp || 0) - (ox[0]?.ehp || 0))
-            .map(([skill]) => skill);
-        let mostPerBoss: Record<string, Array<{ userId: string, kc: number, ehb: number }>> = {}
-        for (const calculation of Object.entries(calculations)) {
-            for (const [boss, v] of Object.entries(calculation[1].kc)) {
-                if (!mostPerBoss[boss]) {
-                    mostPerBoss[boss] = []
-                }
-                mostPerBoss[boss].push({ 
-                    ehb: calculation[1].ehb[boss] || 0,
-                    userId: calculation[1].userId,
-                    kc: calculation[1].kc[boss] || 0
-                })
-            }
-        }
-        for (const [boss, array] of Object.entries(mostPerBoss)) {
-            mostPerBoss[boss] = array.sort((x, y) => x.ehb < y.ehb ? 1 : x.ehb > y.ehb ? -1 : 0)
-        }
-        const sortedBosses = Object.entries(mostPerBoss)
-            .sort(([sx, ox], [sy, oy]) => (oy[0]?.ehb || 0) - (ox[0]?.ehb || 0))
-            .map(([boss]) => boss);
-        let message1 = `Hey there <@&${Variables.var.ClanMemberRole}>, this is our hall of fame. You can update it by using the /stats command, so get some gains and you'll be on here too!\n\nThe numbers are based on a combined amount from all your accounts in the clan. You can use the \`/stats\` command to check on your own combined stats. Stats per account can be seen on our TempleOSRS page: https://templeosrs.com/groups/members.php?id=2305\n\nWe use TempleOSRS for collection log tracking, so if you want your collection log numbers on this message, then install the templeosrs runelite plugin, open your collection log and click the TempleOSRS sync button. You should then see your collection log information on your TempleOSRS profile too.\n\n`
-        message1 += `Top 10 Efficient Hours Total (EHP + EHB + EHC):\n`
-        for (let i = 0; i < 10; i ++) {
-            if (i > mostEHT.length - 1) continue
-            const icon = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i >= 3 ? `-${i + 1}-` : ''
-            message1 += `${icon} <@${mostEHT[i][1]?.userId}>: ${Math.round(mostEHT[i][1].eht)}\n`
-        }
-        message1 += `\nTop 10 Efficient Hours Played\n`
-        for (let i = 0; i < 10; i ++) {
-            if (i > mostEHP.length - 1) continue
-            const icon = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i >= 3 ? `-${i + 1}-` : ''
-            message1 += `${icon} <@${mostEHP[i][1]?.userId}>: ${mostEHP[i][1].ehp}\n`
-        }
-        message1 += '.'
-        let message2 = `Top 10 XP\n`
-        for (let i = 0; i < 10; i ++) {
-            if (i > mostXP.length - 1) continue
-            const icon = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i >= 3 ? `-${i + 1}-` : ''
-            message2 += `${icon} <@${mostXP[i][1]?.userId}>: ${mostXP[i][1].xp}M XP\n`
-        }
-        message2 += `\nTop 10 Efficient Hours Bossed\n`
-        for (let i = 0; i < 10; i ++) {
-            if (i > mostEHB.length - 1) continue
-            const icon = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i >= 3 ? `-${i + 1}-` : ''
-            message2 += `${icon} <@${mostEHB[i][1]?.userId}>: ${mostEHB[i][1].ehb}\n`
-        }
-        message2 += '.'
-        let message3 = `Top 10 Collection Loggers\n`
-        for (let i = 0; i < 10; i ++) {
-            if (i > mostClogs.length - 1) continue
-            const icon = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i >= 3 ? `-${i + 1}-` : ''
-            message3 += `${icon} <@${mostClogs[i][0]}>: ${mostClogs[i][1].highestClogs} items (${Math.round(mostClogs[i][1].highestPercentage * 1000) / 10}%)\n`
-        }
-        message3 += `\nTop 10 Collection Categories Completed\n`
-        for (let i = 0; i < 10; i ++) {
-            if (i > mostCategories.length - 1) continue
-            const icon = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i >= 3 ? `-${i + 1}-` : ''
-            message3 += `${icon} <@${mostCategories[i][0]}>: ${mostCategories[i][1].highestCategories} categories\n`
-        }
-        message3 += `\nTop 10 Efficient Hours Collection Logged\n`
-        for (let i = 0; i < 10; i ++) {
-            if (i > mostEhc.length - 1) continue
-            const icon = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i >= 3 ? `-${i + 1}-` : ''
-            message3 += `${icon} <@${mostEhc[i][0]}>: ${Math.round(mostEhc[i][1].ehcTotal)} EHC\n`
-        }
-        const guild: Guild = await Discord.client.guilds.fetch(Variables.var.Guild)
-        const channel = await guild.channels.fetch("1422875648736624691") as TextChannel
-        if (!channel) return
-        let fetched
-        do {
-            fetched = (await channel.messages.fetch({ limit: 100 })).filter((v) => ![
-                '1423013708589826199',
-                '1423013710687113277',
-                '1423013712729473196'
-            ].includes(v.id));
-            await (channel as any).bulkDelete(fetched, true);
-        } while (fetched.size >= 3); // loop until no more messages
-        let discordMessage1 = await channel.messages.fetch('1423013708589826199',)
-        let discordMessage2 = await channel.messages.fetch('1423013710687113277',)
-        let discordMessage3 = await channel.messages.fetch('1423013712729473196')
-        await discordMessage1.edit(message1)
-        await discordMessage2.edit(message2)
-        await discordMessage3.edit(message3)
-    }
-
-    public static calculateForAllUsers = async() => {
-        const guild = await Discord.client.guilds.fetch(Variables.var.Guild)
-        const repo = Bot.dataSource.getRepository(ClanApplication)
-        const apps = await repo.find()
-        const ids: any[] = []
-        const assetsPath = path.join(__dirname, '../../../assets')
-        if (!existsSync(assetsPath)) {
-            mkdirSync(assetsPath)
-        }
-        const name = path.join(assetsPath, `temple-osrs-data.json`)
-        if (existsSync(name) && new Date().getTime() - lstatSync(name).mtimeMs < 24 * 3600 * 1000) {
-            return
-        }
-        const calculations: Array<ReturnType<typeof Stats['calculateForUser']> extends Promise<infer A> ? A : null> = []
-        for (const app of apps) {
-            if (!app.userId) continue
-            if (ids.includes(app.userId)) continue
-            ids.push(app.userId)
-            try {
-                const member = await fetchOrNull('member', app.userId)
-                if (!member) {
-                    continue
-                }
-                const calculation = await this.calculateForUser(member.user, true)
-                calculations.push(calculation)
-            }
-            catch (err) {}
-        }
-        writeFileSync(name, JSON.stringify(calculations, null, 4))
-    }
-
-    public static calculateForUser = async(user: User, allUsers = false) => {
-        console.log(`Calculating user stats for "${user.username}"`)
-        const allData: Record<string, ReturnType<typeof Stats.calculateForUser> extends Promise<infer A> ? A : any> = JSON.parse(readFileSync(path.join(__dirname, `../../../assets/all-user-information.json`)).toString('utf-8')) as any
-        const repo = Bot.dataSource.getRepository(ClanApplication)
-        const apps = (await repo.find({
+    public static readonly main = async(interaction: ChatInputCommandInteraction) => {
+        let response = ''
+        const user = interaction.options.getUser('user')!
+        const apps = await Bot.dataSource.getRepository(ClanApplication).find({
             where: {
                 userId: user.id
             }
-        })).filter((v) => !v.archived && !v.userLeft)
-        const apiResults: Array<{
-            data: any
-            rsn: string,
-            info: {
-                primary_ehp: string
-                primary_ehb: string
-            },
-            userId: string
-        }> = []
-        let response = ``
-        let total = 0
-        let tooManyRequests = false
-        let ehpMax = 0
-        for (const app of apps) {
-            if (!app.rsn?.length) continue
-            const res = await fetch(`https://templeosrs.com/api/player_stats.php?player=${app.rsn}&bosses=1`)
-            if (res.status !== 200) {
-                if (res.status === 429) {
-                    console.log(`RSN "${app.rsn}": ${res.statusText}`)
-                    tooManyRequests = true
-                }
-                response += `❌ Stats for "${app.rsn}" could not be fetched.\n`
-                console.log(`Failed to retrieve stats.`)
-                continue
+        })
+        const stats = await this.retrieve({
+            rsn: apps.filter(v => v.rsn).map((v) => v.rsn) as string[],
+            maxAgeMs: 5 * 60 * 1000
+        })
+        const ehttotal = Object.entries(stats).map(([k, v]) => (v.bossing?.hours || 0) + (v.skilling?.Overall?.hours?.played || 0) + (v.clog?.hours?.played || 0)).reduce((x, y) => x + y, 0)
+        const ehptotal = Object.entries(stats).map(([k, v]) => (v.skilling?.Overall?.hours?.played || 0)).reduce((x, y) => x + y, 0)
+        const ehbtotal = Object.entries(stats).map(([k, v]) => (v.bossing?.hours || 0)).reduce((x, y) => x + y, 0)
+        const xptotal = Object.entries(stats).map(([k, v]) => (v.skilling?.Overall?.hours?.played || 0)).reduce((x, y) => x + y, 0)
+        const _skills = Object.entries(stats).filter(([k, v]) => v.skilling).map(([k, v]) => v.skilling)
+        const skills: Record<Skills, number> = {} as any
+        for (let i = 0; i < _skills.length; i ++) {
+            for (const [k, v] of Object.entries(_skills[i]!)) {
+                (skills as any)[k] = Math.max((skills as any)[k], v.xp || 0)
             }
-            const json = await res.json()
-            total = Math.max(total, json?.data?.Overall_level)
-            apiResults.push({
-                ...json,
-                rsn: app.rsn,
-                userId: app.userId
-            })
         }
-        let stats: Array<{
-            EHP: number,
-            EHB: number,
-            EHC: number,
-            XP: number,
-            clogs: number
-            categories: number
-            percentageMaxXPAccount: number
-            clogsPercentage: number,
-            highestPercentage: number,
-            rsn: string
-        }> = []
-        const skills: Record<string, number> = {}
-        const ehp: Record<string, number> = {}
-        const kc: Record<string, number> = {}
-        const ehb: Record<string, number> = {}
-        let highestCategories = 0
-        let highestClogs = 0
-        let highestPercentage = 0
-        let current_total_collections_available = 0
-        let percentageMaxXP = 0
-        try {
-            current_total_collections_available = parseInt(readFileSync(path.join(__dirname, '../../../', 'assets', 'max-clogs.txt')).toString('utf8'))
-        }
-        catch (err) {}
-        let ogClogsAv = current_total_collections_available
-        for (const res of apiResults) {
-            if (!res?.data?.info) continue
-            const EHP = res.data.info.Primary_ehp?.length
-                ? typeof res.data[res.data.info.Primary_ehp] === 'number'
-                    ? res.data[res.data.info.Primary_ehp]
-                    : 0
-                : 0
-            ehpMax = Math.max(ehpMax, EHP)
-            const EHB = res.data.info.Primary_ehb?.length
-                ? typeof res.data[res.data.info.Primary_ehb] === 'number'
-                    ? res.data[res.data.info.Primary_ehb]
-                    : 0
-                : 0
-            const XP = typeof res.data['Overall'] === 'number' ? res.data['Overall'] : 0
-            for (const [k, v] of Object.entries(res.data)) {
-                if (k !== 'Overall' && Object.hasOwn(res.data, k + '_rank') && Object.hasOwn(res.data, k + '_level')) {
-                    if (typeof skills[k] !== 'number')
-                    skills[k] = 0
-                    if (typeof v === 'number')
-                    skills[k] += v
-                    if (typeof ehp[k] !== 'number')
-                    ehp[k] = 0
-                    if (typeof res.data[k + '_ehp'] === 'number')
-                    ehp[k] += res.data[k + '_ehp']
-                }
-                if (Object.hasOwn(res.data, k + '_ehb')) {
-                    if (typeof ehb[k] !== 'number')
-                    ehb[k] = 0
-                    if (typeof res.data[k + '_ehb'] === 'number')
-                    ehb[k] += res.data[k + '_ehb']
-                    if (typeof kc[k] !== 'number')
-                    kc[k] = 0
-                    if (typeof res.data[k] === 'number')
-                    kc[k] += res.data[k]
-                }
+        const _ehp = Object.entries(stats).filter(([k, v]) => v.skilling).map(([k, v]) => v.skilling)
+        const ehp: Record<Skills, number> = {} as any
+        for (let i = 0; i < _ehp.length; i ++) {
+            for (const [k, v] of Object.entries(_ehp[i]!)) {
+                (ehp as any)[k] = Math.max((ehp as any)[k], v.hours?.played || 0)
             }
-            let EHC = 0
-            let clogs = 0
-            let categories = 0
-            let clogsPercentage = 0
-            if (!allUsers) {
-                try {
-                    const res2 = await fetch(`https://templeosrs.com/api/collection-log/player_collection_log.php?player=${res.rsn}&categories=champions_challenge,castle_wars`)
-                    try {
-                        if (res2.status === 429) {
-                            console.log(`Clogs "${res.rsn}": ${res2.statusText}`)
-                            tooManyRequests = true
-                        }
-                        const json = await res2.json()
-                        if (typeof json.data.total_collections_available === 'number' && json.data.total_collections_available !== current_total_collections_available) {
-                            current_total_collections_available = json.data.total_collections_available
-                        }
-                        clogs = json.data.total_collections_finished || 0
-                        EHC = json.data.ehc || 0
-                        categories = json.data.total_categories_finished || 0
-                        clogsPercentage = json.data.total_collections_finished / json.data.total_collections_available
-                        highestCategories = Math.max(highestCategories, categories)
-                        highestClogs = Math.max(highestClogs, clogs)
-                        highestPercentage = Math.max(highestPercentage, clogsPercentage)
-                        current_total_collections_available = json.data.total_collections_available
-                    }
-                    catch (err) {}
-                }
-                catch (err) {}
+        }
+        const _kc = Object.entries(stats).filter(([k, v]) => v.bossing?.bosses).map(([k, v]) => v.bossing.bosses)
+        const kc: Record<Skills, number> = {} as any
+        for (let i = 0; i < _kc.length; i ++) {
+            for (const [k, v] of Object.entries(_kc[i]!)) {
+                (kc as any)[k] = Math.max((kc as any)[k], v.kc || 0)
             }
-            try {
-                const res3 = await fetch(`https://secure.runescape.com/m=hiscore_oldschool/hiscorepersonal?user1=${encodeURIComponent(res.rsn)}`)
-                if (res3.status === 429) {
-                    tooManyRequests = true
-                }
-                console.log(`Manual Clog "${res.rsn}": ${res3.statusText}`)
-                const html = await res3.text()
-                const $ = cheerio.load(html)
-                const parsed = parseInt($(`a[href]`).filter((_, el) => $(el).text().includes('Collections Logged')).first().parent().next().next().text().replace(',', '') || '0')
-                if (!!parsed && typeof parsed === 'number' && parsed + parsed !== parsed) {
-                    clogs = parsed
-                }
-                highestClogs = Math.max(highestClogs, clogs)
-                clogsPercentage = current_total_collections_available === 0 ? 0 : clogs / current_total_collections_available
-                highestPercentage = Math.max(highestPercentage, clogsPercentage)
+        }
+        const _ehb = Object.entries(stats).filter(([k, v]) => v.bossing?.bosses).map(([k, v]) => v.bossing.bosses)
+        const ehb: Record<Skills, number> = {} as any
+        for (let i = 0; i < _ehb.length; i ++) {
+            for (const [k, v] of Object.entries(_ehb[i]!)) {
+                (ehb as any)[k] = Math.max((ehb as any)[k], v.hours || 0)
             }
-            catch (err) {}
-            let percentageMaxXPAccount = 0
-            if (EHP > 5000) {
-                try {
-                    const res4 = await fetch(`https://templeosrs.com/player/stats.php?player=${res.rsn}`)
-                    if (res4.status === 200) {
-                        const html = await res4.text()
-                        const $ = cheerio.load(html)
-                        // after loading html with cheerio
-                        const statsTable = $(".ttm-title-center")
-                            .filter((_, el) => $(el).text().includes("Time to 200m all")) // find the correct table
-                            .first(); // in case multiple tables match
-                        if (statsTable.length) {
-                            const parentTable = statsTable.closest("#stats-bottom-container");
-                            const percentageMaxXPAccount = parseFloat($(parentTable).children('.table-sortable').children('tfoot').children('tr').last().children('td').last().text()?.replace('%', ''))
-                            if (percentageMaxXPAccount + percentageMaxXPAccount !== percentageMaxXPAccount && typeof percentageMaxXPAccount === 'number') {
-                                console.log(res.rsn + ' :: ' + percentageMaxXPAccount)
-                                percentageMaxXP = Math.max(percentageMaxXP, percentageMaxXPAccount)
-                            }
-                        }
-                    }
-                }
-            catch (err) {}
-            }
-            stats.push({
-                EHP,
-                EHB,
-                percentageMaxXPAccount,
-                EHC,
-                clogs,
-                categories,
-                clogsPercentage,
-                XP,
-                highestPercentage,
-                rsn: res.rsn
-            })
         }
-        if (current_total_collections_available !== ogClogsAv) {
-            writeFileSync(path.join(__dirname, '../../../', 'assets', 'max-clogs.txt'), current_total_collections_available.toString())
-        }
-        stats = stats.sort((x, y) => x.EHB + x.EHP + x.EHC < y.EHB + y.EHC + y.EHP ? 1 : x.EHB + x.EHC + x.EHP > y.EHC + y.EHB + y.EHP ? -1 : 0)
-        const ehptotal = Math.round(stats.map((v) => v.EHP).reduce((x, y) => x + y, 0))
-        const ehbtotal = Math.round(stats.map((v) => v.EHB).reduce((x, y) => x + y, 0))
-        let ehctotal = Math.round(stats.map((v) => v.EHC).reduce((x, y) => x + y, 0))
-        if (tooManyRequests) {
-            ehctotal = allData[user.id]?.ehcTotal
-        }
-        const clogstotal = Math.round(stats.map((v) => v.clogs).reduce((x, y) => x + y, 0))
-        let categoriestotal = Math.round(stats.map((v) => v.categories).reduce((x, y) => x + y, 0))
-        if (tooManyRequests) {
-            categoriestotal = allData[user.id]?.highestCategories
-        }
-        const ehttotal = ehptotal + ehbtotal + ehctotal
-        const xptotal = Math.round(stats.map((v) => v.XP).reduce((x, y) => x + y, 0) / 1000000)
+        const clogstotal = Object.entries(stats).map(([k, v]) => Math.max((v.clog?.slots?.current?.hiscores || 0), (v.clog?.slots?.current?.temple || 0))).reduce((x, y) => x + y, 0)
+        const categoriestotal = Object.entries(stats).map(([k, v]) => (v.clog?.categories?.green || 0)).reduce((x, y) => x + y, 0)
+        const ehctotal = Object.entries(stats).map(([k, v]) => (v.clog?.hours?.played || 0)).reduce((x, y) => x + y, 0)
+
         response += `📊 <@${user.id}>: EHT: ${ehttotal}, EHP ${ehptotal}, EHB: ${ehbtotal}, XP: ${xptotal}M\n`
         response += `📕 Collection Logs: ${clogstotal}, Categories: ${categoriestotal}, EHC: ${ehctotal}\n\nAccounts\n`
-        for (const res of stats) {
-            response += `👤 ${res.rsn}: EHT: ${Math.round(res.EHP) + Math.round(res.EHB) + Math.round(res.EHC)}, EHP ${Math.round(res.EHP)}, EHB: ${Math.round(res.EHB)}, XP: ${Math.round(res.XP / 1000000)}M\n`
-            response += `📕 Collection Logs: ${res.clogs} (${Math.round(res.clogsPercentage * 1000)/10}%), Categories: ${res.categories}, EHC: ${Math.round(res.EHC)}\n`
+        for (const [rsn, res] of Object.entries(stats)) {
+            response += `👤 ${rsn}: EHT: ${Math.round(res.skilling?.Overall?.hours?.played || 0) + Math.round(res?.bossing?.hours || 0) + Math.round(res.clog?.hours?.played || 0)}, EHP ${Math.round(res.skilling?.Overall?.hours?.played || 0)}, EHB: ${Math.round(res.bossing?.hours || 0)}, XP: ${Math.round((res.skilling?.Overall?.xp || 0) / 1000000)}M\n`
+            response += `📕 Collection Logs: ${Math.max(res.clog?.slots?.current?.hiscores || 0, res.clog?.slots?.current?.temple || 0)} (${Math.round(res.clog?.slots?.percentage * 10)/10}%), Categories: ${res.clog?.categories?.green || 0}, EHC: ${Math.round(res.clog?.hours?.played || 0)}\n`
         }
         response += `\nTop 3 Skills:\n`
         const skillSorted = Object.entries(skills).sort(([k, v], [kk, vv]) => v < vv ? 1 : v > vv ? -1 : 0)
@@ -393,63 +145,445 @@ export default class Stats {
             if (!ehbSorted[i]?.length) continue
             response += `${i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'} ${ehbSorted[i][0]}: ${Math.round(ehbSorted[i][1])} EHB\n`
         }
-        if (!existsSync(path.join(__dirname, '../../../assets'))) mkdirSync(path.join(__dirname, '../../../assets'))
-        let data = {
-            updated: new Date().getTime(),
-            total,
-            userId: user.id,
-            ehpMax,
-            ehpTotal: ehptotal,
-            ehbTotal: ehbtotal,
-            ehtTotal: ehttotal,
-            ehcTotal: ehctotal,
-            percentageMaxXP,
-            skills,
-            ehp,
-            kc,
-            stats,
-            ehb,
-            highestCategories,
-            highestClogs,
-            highestPercentage,
-            xpTotal: xptotal,
-            response: response.trim(),
-            ehbTop3: ehbSorted.map((v) => ({
-                boss: v[0],
-                ehb: v[1]
-            })),
-            ehpTop3: ehpSorted.map((v) => ({
-                skill: v[0],
-                ehp: v[1]
-            })),
-            xpTop3: skillSorted.map((v) => ({
-                skill: v[0],
-                xp: v[1]
-            })),
-            kcTop3: kcSorted.map((v) => ({
-                boss: v[0],
-                kc: v[1]
-            }))
-        }
-        if (!existsSync(path.join(__dirname, `../../../assets/all-user-information.json`))) {
-            writeFileSync(path.join(__dirname, `../../../assets/all-user-information.json`), JSON.stringify('{}'))
-        }
-        if (tooManyRequests) {
-            data = {
-                ...data,
-                ehtTotal: Math.max(allData[user.id]?.ehtTotal || 0, data.ehtTotal),
-                ehcTotal: Math.max(allData[user.id]?.ehcTotal || 0, data.ehcTotal),
-                highestCategories: Math.max(allData[user.id]?.highestCategories || 0, data.highestCategories),
-                highestClogs: Math.max(allData[user.id]?.highestClogs || 0, data.highestClogs),
-                highestPercentage: Math.max(allData[user.id]?.highestPercentage || 0, data.highestPercentage),
-            }
-        }
-        allData[user.id] = data
-        writeFileSync(path.join(__dirname, `../../../assets/all-user-information.json`), JSON.stringify(allData, null, 4))
-        return data
+        return await interaction.editReply(response)
     }
 
-    public static checkRank = (totalLevel: number, ehp: number, clogs: number): number => {
-        return 0
+    /**
+     * Retrieves the stats of one or multiple runescape names through API calls.
+     * @param rsns the rsns
+     * @returns the stats
+     */
+    public static readonly retrieve = async<T extends string | U[], U extends string>(options: {
+        rsn: T,
+        maxAgeMs?: number
+    }): Promise<Record<U, UserStats>> => {
+        const maxAgeMs = options.maxAgeMs === undefined
+            ? this.defaultMaxAgeMs
+            : options.maxAgeMs
+        const rsns: U[] = Array.isArray(options.rsn)
+            ? options.rsn as U[]
+            : [options.rsn as string as U]
+        const stats: Record<U, UserStats> = {} as any
+        for (const rsn of rsns) {
+            const temple = await this.retrieveTempleStats({
+                maxAgeMs,
+                rsn
+            })
+            if (!temple) continue
+            const clog = await this.retrieveClogStats({ rsn, maxAgeMs })
+            const ustats: UserStats = {
+                updated: new Date().getTime(),
+                clog: (typeof clog === 'number' || clog === null)
+                    ? {
+                        categories: {
+                            green: 0,
+                            percentage: 0,
+                            total: 0
+                        },
+                        hours: {
+                            percentage: 0,
+                            played: 0
+                        },
+                        slots: {
+                            current: {
+                                temple: 0,
+                                hiscores: clog === null ? 0 : clog
+                            },
+                            percentage: 0
+                        }
+                    }
+                    : clog,
+                bossing: temple.bossing,
+                skilling: temple.skilling
+            }
+            stats[rsn] = ustats
+        }
+        return stats
+    }
+
+    private static readonly retrieveTempleStats = async(options: {
+        rsn: string,
+        maxAgeMs?: number
+    }): Promise<{ skilling: UserStats['skilling'], bossing: UserStats['bossing'] } | null> => {
+        const res = await this.fetchOrCache<Record<string, any>>({
+            url: `https://templeosrs.com/api/player_stats.php?player=${options.rsn}&bosses=1`,
+            type: 'json',
+            maxAgeMs: options.maxAgeMs
+        })
+        if (!res) return null
+        if (!res.data?.info) return null
+        const stats: {
+            skilling: UserStats['skilling'],
+            bossing: UserStats['bossing']
+        } = {
+            skilling: {} as any,
+            bossing: {
+                bosses: {} as any,
+                hours: 0
+            }
+        }
+        const ehb = res.data.info.Primary_ehb
+        for (const [k, v] of Object.entries(res.data)) {
+            if (k.endsWith('_ehp')) {
+                const skill = k.replace(/\_ehp$/g, '') as Skills
+                (stats.skilling as any)[skill] = {
+                    hours: {
+                        played: v,
+                        percentage: 0
+                    },
+                    level: res.data[`${skill}_level`],
+                    rank: res.data[`${skill}_rank`],
+                    xp: res.data[skill]
+                }
+            }
+             if (k.endsWith('_ehb')) {
+                const boss = k.replace(/\_ehb$/g, '') as Skills
+                (stats.bossing.bosses as any)[boss] = {
+                    hours: res.data[`${boss}_ehb`],
+                    kc: res.data[`${boss}`]
+                } as UserStats['bossing']['bosses'][string]
+            }
+        }
+        stats.bossing.hours = res.data[ehb]
+        // Calculate EHP hours
+        let percentageMaxXPAccount = 0
+        try {
+            const res = await this.fetchOrCache({
+                url: `https://templeosrs.com/player/stats.php?player=${options.rsn}`,
+                type: 'html',
+                maxAgeMs: options.maxAgeMs
+            })
+            if (res) {
+                const $ = cheerio.load(res)
+                // after loading html with cheerio
+                const statsTable = $(".ttm-title-center")
+                    .filter((_, el) => $(el).text().includes("Time to 200m all")) // find the correct table
+                    .first(); // in case multiple tables match
+                if (statsTable.length) {
+                    const parentTable = statsTable.closest("#stats-bottom-container");
+                    const percentageMaxXP = parseFloat($(parentTable).children('.table-sortable').children('tfoot').children('tr').last().children('td').last().text()?.replace('%', ''))
+                    if (percentageMaxXP + percentageMaxXP !== percentageMaxXP && typeof percentageMaxXP === 'number') {
+                        percentageMaxXPAccount = Math.max(percentageMaxXP, percentageMaxXPAccount)
+                    }
+                }
+            }
+        }
+        catch (err) {
+            console.error(err)
+        }
+        if (stats.skilling?.Overall?.hours) {
+            stats.skilling.Overall.hours.percentage = percentageMaxXPAccount
+        }
+        return stats
+    }
+
+    private static readonly retrieveClogStats = async(options: {
+        rsn: string
+        maxAgeMs?: number 
+    }): Promise<UserStats['clog'] | number | null> => {
+        // Retrieves the file
+        const p = ['assets', 'cached', 'fetch']
+        this.makeDirectory(...p)
+        const fp = [__dirname, '../../../', ...p]
+        const indexPath = path.join(...fp, 'index.json')
+        if (!existsSync(indexPath)) {
+            writeFileSync(indexPath, JSON.stringify({
+                id: 0,
+                maxClogs: 0,
+                records: {}
+            } as CacheIndexFile, null, 4))
+        }
+        this.makeDirectory(...p)
+        const cacheFile = JSON.parse(readFileSync(indexPath).toString('utf8')) as CacheIndexFile
+        let maxClogs = cacheFile.maxClogs
+        const res = {
+            temple: await this.fetchOrCache<Record<string, any>>({
+                url: `https://templeosrs.com/api/collection-log/player_collection_log.php?player=${options.rsn}&categories=champions_challenge,castle_wars`,
+                type: 'json',
+                maxAgeMs: options.maxAgeMs
+            }),
+            osrs: await this.fetchOrCache({
+                url: `https://secure.runescape.com/m=hiscore_oldschool/hiscorepersonal?user1=${encodeURIComponent(options.rsn)}`,
+                type: 'html',
+                maxAgeMs: options.maxAgeMs
+            })
+        }
+        if (!res.temple && !res.osrs) {
+            return null
+        }
+        const html = res.osrs
+        if (!html) return null
+        const $ = cheerio.load(html)
+        let clogs = {
+            hiscores: 0,
+            temple: 0,
+            max: 0
+        } 
+        const parsed = parseInt($(`a[href]`).filter((_, el) => $(el).text().includes('Collections Logged')).first().parent().next().next().text().replace(',', '') || '0')
+        if (!!parsed && typeof parsed === 'number' && parsed + parsed !== parsed) {
+            clogs.hiscores = parsed
+        }
+        if (!res.temple?.data) return clogs.hiscores
+        clogs.temple = res.temple.data.total_collections_finished
+        clogs.max = Math.max(clogs.hiscores, clogs.temple)
+        if (!maxClogs) {
+            cacheFile.maxClogs = res.temple.data.total_collections_available
+            writeFileSync(indexPath, JSON.stringify(cacheFile, null, 4))
+        }
+        maxClogs = res.temple.data.total_collections_available
+        const percentage = clogs.max / maxClogs * 100
+        return {
+            categories: {
+                green: res.temple.data.total_categories_finished,
+                percentage: res.temple.data.total_categories_finished / res.temple.data.total_categories_available * 100,
+                total: res.temple.data.total_categories_available
+            },
+            hours: {
+                percentage: 0, // TODO:
+                played: Math.max(res.temple.data.ehc, res.temple.data.ehc_gilded)
+            },
+            slots: {
+                current: {
+                    hiscores: clogs.hiscores,
+                    temple: clogs.temple,
+                },
+                percentage
+            }
+        }
+    }
+
+    /** Updates the hall of fame */
+    public static updateHallOfFame = async() => {
+        const apps = await Bot.dataSource.getRepository(ClanApplication).find()
+        const members = await Stats.fetchOrCache({
+            url: `https://templeosrs.com/api/groupmembers.php?id=2305`,
+            type: 'json',
+            maxAgeMs: 30 * 60 * 1000
+        }) as string[]
+        const stats = await Stats.retrieve({
+            rsn: apps.filter((v) => v.rsn && members.includes(v.rsn)).map((v) => v.rsn) as any,
+            maxAgeMs: 60 * 60 * 24 * 1000
+        })
+        const statsPerUser: Record<string, { rsn: string, stats: UserStats}[]> = {}
+        for (const app of apps) {
+            if (!app.rsn) continue
+            statsPerUser[app.userId] = statsPerUser[app.userId] || []
+            statsPerUser[app.userId].push({ rsn: app.rsn, stats: stats[app.rsn] })
+        }
+        const ehtPerUser = Object.entries(statsPerUser).map((([k, stats]) => stats.map((v) => ({
+            eht: (v.stats?.bossing?.hours || 0) + (v.stats?.skilling?.Overall?.hours?.played || 0) + (v.stats?.clog?.hours?.played || 0),
+            userId: k
+        })))).map((v) => ({ userId: v[0].userId, eht: v.reduce((x, y) => x + y.eht, 0) })).sort((x, y) => y.eht - x.eht)
+        const ehpPerUser = Object.entries(statsPerUser).map((([k, stats]) => stats.map((v) => ({
+            ehp: (v.stats?.skilling?.Overall?.hours?.played || 0),
+            userId: k
+        })))).map((v) => ({ userId: v[0].userId, ehp: v.reduce((x, y) => x + y.ehp, 0) })).sort((x, y) => y.ehp - x.ehp)
+        const ehbPerUser = Object.entries(statsPerUser).map((([k, stats]) => stats.map((v) => ({
+            ehb: (v.stats?.bossing?.hours || 0),
+            userId: k
+        })))).map((v) => ({ userId: v[0].userId, ehb: v.reduce((x, y) => x + y.ehb, 0) })).sort((x, y) => y.ehb - x.ehb)
+        const ehcPerUser = Object.entries(statsPerUser).map((([k, stats]) => stats.map((v) => ({
+            ehc: (v.stats?.clog?.hours?.played || 0),
+            userId: k
+        })))).map((v) => ({ userId: v[0].userId, ehc: v.reduce((x, y) => x + y.ehc, 0) })).sort((x, y) => y.ehc - x.ehc)
+        const categoriesPerUser = Object.entries(statsPerUser).map((([k, stats]) => stats.map((v) => ({
+            categories: (v.stats?.clog?.categories?.green || 0),
+            userId: k
+        })))).map((v) => ({ userId: v[0].userId, categories: v.reduce((x, y) => x + y.categories, 0) })).sort((x, y) => y.categories - x.categories)
+        const clogsPerUser = Object.entries(statsPerUser).map((([k, stats]) => stats.map((v) => ({
+            clogs: Math.max(v.stats?.clog?.slots?.current?.hiscores || 0, v.stats?.clog?.slots?.current?.temple || 0),
+            percentage: Math.max(v.stats?.clog?.slots?.current?.hiscores || 0, v.stats?.clog?.slots?.current?.temple || 0),
+            userId: k,
+            rsn: v.rsn
+        })))).flat().sort((x, y) => y.clogs - x.clogs)
+        const xpPerUser = Object.entries(statsPerUser).map((([k, stats]) => stats.map((v) => ({
+            xp: (v.stats?.skilling?.Overall?.xp || 0),
+            userId: k
+        })))).map((v) => ({ userId: v[0].userId, xp: v.reduce((x, y) => x + y.xp, 0) })).sort((x, y) => y.xp - x.xp)
+
+        let message1 = `Hey there <@&${Variables.var.ClanMemberRole}>, this is our hall of fame. You can update it by using the /stats command, so get some gains and you'll be on here too!\n\nThe numbers are based on a combined amount from all your accounts in the clan. You can use the \`/stats\` command to check on your own combined stats. Stats per account can be seen on our TempleOSRS page: https://templeosrs.com/groups/members.php?id=2305\n\nWe use TempleOSRS for collection log tracking, so if you want your collection log numbers on this message, then install the templeosrs runelite plugin, open your collection log and click the TempleOSRS sync button. You should then see your collection log information on your TempleOSRS profile too.\n\n`
+        message1 += `Top 10 Efficient Hours Total (EHP + EHB + EHC):\n`
+        for (let i = 0; i < 10; i ++) {
+            if (i > ehtPerUser.length - 1) continue
+            const icon = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i >= 3 ? `-${i + 1}-` : ''
+            message1 += `${icon} <@${ehtPerUser[i]?.userId}>: ${Math.round(ehtPerUser[i].eht)}\n`
+        }
+        message1 += `\nTop 10 Efficient Hours Played\n`
+        for (let i = 0; i < 10; i ++) {
+            if (i > ehpPerUser.length - 1) continue
+            const icon = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i >= 3 ? `-${i + 1}-` : ''
+            message1 += `${icon} <@${ehpPerUser[i]?.userId}>: ${ehpPerUser[i].ehp}\n`
+        }
+        message1 += '.'
+        let message2 = `Top 10 XP\n`
+        for (let i = 0; i < 10; i ++) {
+            if (i > xpPerUser.length - 1) continue
+            const icon = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i >= 3 ? `-${i + 1}-` : ''
+            message2 += `${icon} <@${xpPerUser[i]?.userId}>: ${xpPerUser[i].xp}M XP\n`
+        }
+        message2 += `\nTop 10 Efficient Hours Bossed\n`
+        for (let i = 0; i < 10; i ++) {
+            if (i > ehbPerUser.length - 1) continue
+            const icon = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i >= 3 ? `-${i + 1}-` : ''
+            message2 += `${icon} <@${ehbPerUser[i]?.userId}>: ${ehbPerUser[i].ehb}\n`
+        }
+        message2 += '.'
+        let message3 = `Top 10 Collection Loggers\n`
+        for (let i = 0; i < 10; i ++) {
+            if (i > clogsPerUser.length - 1) continue
+            const icon = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i >= 3 ? `-${i + 1}-` : ''
+            message3 += `${icon} <@${clogsPerUser[i].userId}>: ${clogsPerUser[i].clogs} items (${Math.round(clogsPerUser[i].clogs * 1000) / 10}%)\n`
+        }
+        message3 += `\nTop 10 Collection Categories Completed\n`
+        for (let i = 0; i < 10; i ++) {
+            if (i > categoriesPerUser.length - 1) continue
+            const icon = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i >= 3 ? `-${i + 1}-` : ''
+            message3 += `${icon} <@${categoriesPerUser[i].userId}>: ${categoriesPerUser[i].categories} categories\n`
+        }
+        message3 += `\nTop 10 Efficient Hours Collection Logged\n`
+        for (let i = 0; i < 10; i ++) {
+            if (i > ehcPerUser.length - 1) continue
+            const icon = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i >= 3 ? `-${i + 1}-` : ''
+            message3 += `${icon} <@${ehcPerUser[i].userId}>: ${Math.round(ehcPerUser[i].ehc)} EHC\n`
+        }
+        const guild: Guild = await Discord.client.guilds.fetch(Variables.var.Guild)
+        const channel = await guild.channels.fetch("1422875648736624691") as TextChannel
+        if (!channel) return
+        let fetched
+        do {
+            fetched = (await channel.messages.fetch({ limit: 100 })).filter((v) => ![
+                '1423013708589826199',
+                '1423013710687113277',
+                '1423013712729473196'
+            ].includes(v.id));
+            await (channel as any).bulkDelete(fetched, true);
+        } while (fetched.size >= 3); // loop until no more messages
+        let discordMessage1 = await channel.messages.fetch('1423013708589826199',)
+        let discordMessage2 = await channel.messages.fetch('1423013710687113277',)
+        let discordMessage3 = await channel.messages.fetch('1423013712729473196')
+        await discordMessage1.edit(message1)
+        await discordMessage2.edit(message2)
+        await discordMessage3.edit(message3)
+    }
+
+    private static getId = (): number => {
+        let maxId = -1
+        const p = ['assets', 'cached', 'fetch']
+        this.makeDirectory(...p)
+        const fp = path.join(...[__dirname, '../../../', ...p, 'index.json'])
+        if (!existsSync(fp)) {
+            return maxId + 1
+        }
+        const cache: CacheIndexFile = JSON.parse(readFileSync(fp).toString('utf8'))
+        for (const [k, record] of Object.entries(cache.records)) {
+            const id = parseInt(record.name.replace(/\..+$/g, ''))
+            if (Number.isNaN(id)) continue
+            if (!Number.isInteger(id)) continue
+            maxId = Math.max(maxId, id)
+        }
+        return maxId + 1
+    }
+
+    /** Fetches or uses data from cache when using `fetch` based on maxAgeMs */
+    private static readonly fetchOrCache = async<T extends any = string>(options: {
+        url: string,
+        type: 'json' | 'html',
+        maxAgeMs?: number
+    }): Promise<T | null> => {
+        const { url, type } = options
+        const maxAgeMs: number = options.maxAgeMs === undefined
+            ? this.defaultMaxAgeMs
+            : options.maxAgeMs
+
+        // Retrieves the file
+        const p = ['assets', 'cached', 'fetch']
+        const fp = [__dirname, '../../../', ...p]
+        this.makeDirectory(...p)
+
+        // Initializes the index file
+        const indexFilePath = path.join(...fp, 'index.json')
+        if (!existsSync(indexFilePath)) {
+            writeFileSync(indexFilePath, JSON.stringify({
+                maxClogs: 0,
+                records: {}
+            } as CacheIndexFile, null, 4))
+        }
+
+        // Reads the index file
+        let indexFile: CacheIndexFile
+        try {
+            indexFile = JSON.parse(readFileSync(indexFilePath).toString('utf8'))
+        }
+        catch (err) {
+            console.error(`Index file for fetch cache is corrupted...`, err)
+            rmSync(indexFilePath)
+            // Retry
+            return await this.fetchOrCache({ url, type, maxAgeMs })
+        }
+
+        if (maxAgeMs < 0 && !indexFile.records[url]) {
+            return null
+        }
+
+        else if (maxAgeMs >= 0 && (!indexFile.records[url] || (indexFile.records[url].updated < new Date().getTime() - maxAgeMs))) {
+            if (indexFile.records[url] && existsSync(path.join(...fp, indexFile.records[url].name))) {
+                rmSync(path.join(...fp, indexFile.records[url].name))
+            }
+            const res = await fetch(url)
+            if (res.status === 200) {
+                if (type === 'json') {
+                    const data = await res.json()
+                    const name = `${this.getId()}.${type}`
+                    writeFileSync(path.join(...fp, name), JSON.stringify(data, null, 4))
+                    indexFile.records[url] = {
+                        name,
+                        updated: new Date().getTime()
+                    }
+                    writeFileSync(indexFilePath, JSON.stringify(indexFile, null, 4))
+                    return data as T
+                }
+                else {
+                    const data = await res.text()
+                    const name = `${this.getId()}.${type}`
+                    writeFileSync(path.join(...fp, name), data)
+                    indexFile.records[url] = {
+                        name,
+                        updated: new Date().getTime()
+                    }
+                    writeFileSync(indexFilePath, JSON.stringify(indexFile, null, 4))
+                    return data as T
+                }
+            }
+            else {
+                console.error(`Response status: ${res.statusText} for url "${url}"`)
+                return null
+            }
+        }
+        
+        if (!existsSync(path.join(...fp, indexFile.records[url].name))) {
+            delete indexFile.records[url]
+            writeFileSync(indexFilePath, JSON.stringify(indexFile, null, 4))
+            return await this.fetchOrCache({ url, type, maxAgeMs })
+        }
+
+        return options.type === 'json'
+            ? JSON.parse(readFileSync(path.join(...fp, indexFile.records[url].name)).toString('utf8'))
+            : readFileSync(path.join(...fp, indexFile.records[url].name)).toString('utf8') as T
+    }
+
+    /**
+     * Makes a directory recursively
+     * @param directories the path
+     */
+    private static readonly makeDirectory = async(...directories: string[]) => {
+        let cd = path.join(__dirname, '../../../')
+        for (let i = 0; i < directories.length; i ++) {
+            const segment = directories[i]
+            const segmentPath = path.join(cd, segment)
+            if (!existsSync(segmentPath)) {
+                mkdirSync(segmentPath)
+            }
+            cd = segmentPath
+        }
     }
 }

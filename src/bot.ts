@@ -8,7 +8,6 @@ import { execSync } from 'child_process';
 import path from 'path';
 import ApproveTrialistTask from './discord/tasks/approve-trialist-task';
 import SortRelationManager from './discord/tasks/sort-relation-manager';
-import Stats from './discord/commands/stats';
 import { readdirSync, readFileSync, rmSync } from 'fs';
 import Variables from './variables';
 import { Guild, GuildMember, PermissionFlagsBits, PermissionsBitField, REST, Routes, TextChannel, VoiceChannel, VoiceConnectionStates } from 'discord.js';
@@ -20,6 +19,8 @@ import { ClanApplication } from './entities/clan-application';
 import { Server } from 'http';
 import Voice from './discord/voice';
 import { VoiceConnectionStatus } from '@discordjs/voice';
+import GiveBackClanMemberRoleTask from './discord/tasks/give-back-clan-member-role-task';
+import Stats from './discord/commands/stats';
 dotenv.config();
 
 process.on('SIGINT', () => {
@@ -32,6 +33,7 @@ process.on('SIGINT', () => {
         clearTimeout(Bot.setResourceTimeOut)
     }
     Bot.server?.close()
+    process.exit(0)
 });
 
 process.on('SIGTERM', () => {
@@ -44,6 +46,7 @@ process.on('SIGTERM', () => {
         clearTimeout(Bot.setResourceTimeOut)
     }
     Bot.server?.close()
+    process.exit(0)
 });
 
 
@@ -133,6 +136,7 @@ export default class Bot {
 
     private static runCronJobs = async() => {
         let counter = 0
+        let stats = 0
         const processAllMembers = async() => {
             console.log('Processing all members')
             await ProcessAllMembersTask.main()
@@ -146,14 +150,34 @@ export default class Bot {
             console.log('✅')
         }
         while (this.running) {
-            await processAllMembers()
-            await processFrequent() 
-            if (counter++ % 12 === 0) {
+            if (counter % 5 === 0) {
+                await processAllMembers()
+                await processFrequent() 
+            }
+            if ((counter + 1) % 60 === 0) {
                 console.log('Approving/declining trialists')
                 await ApproveTrialistTask.main()
-                console.log('Updating all stats...')
-                await Stats.calculateForAllUsers()
                 console.log('✅')
+            }
+            if (counter % 1 === 0) {
+                console.log('Giving back clan member role to those who don\'t have it anymore.')
+                await GiveBackClanMemberRoleTask.main()
+            }
+            if (counter % 2 === 0) {
+                const apps = await this.dataSource.getRepository(ClanApplication).find()
+                let app = apps[stats]
+                if (!app) {
+                    stats = 0
+                    app = apps[0]
+                }
+                stats++
+                if (app.rsn) {
+                    console.log(`Retrieving stats for user: "${app.rsn}"`)
+                    await Stats.retrieve({
+                        rsn: [app.rsn],
+                        maxAgeMs: 1000 * 2 * 60
+                    })
+                }
             }
             console.log('✅')
             await new Promise<void>((res, rej) => {
@@ -161,9 +185,10 @@ export default class Bot {
                     this.sleep = setTimeout(() => {
                         this.sleep = null
                         res()
-                    }, 1000 * 60 * 5)
+                    }, 1000 * 60)
                 }
             })
+            counter++
         }
     }
 

@@ -45,6 +45,10 @@ export class ClanApplication {
     @Column({ nullable: true, type: 'varchar' })
     notifiedAboutRank: keyof typeof Variables.var.Emojis | null = null
 
+    /** What rank is assigned */
+    @Column({ nullable: true, type: 'varchar' })
+    assignedRank: keyof typeof Variables.var.Emojis | null = null
+
     /** Did the user leave? */
     @Column({ nullable: true, type: 'tinyint' })
     userLeft: boolean = false

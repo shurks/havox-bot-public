@@ -1,0 +1,517 @@
+{
+    "updated": 1761988534548,
+    "clog": {
+        "categories": {
+            "green": 19,
+            "percentage": 16.666666666666664,
+            "total": 114
+        },
+        "hours": {
+            "percentage": 0,
+            "played": 1055.7358
+        },
+        "slots": {
+            "current": {
+                "hiscores": 646,
+                "temple": 634
+            },
+            "percentage": 40.1491609695463
+        }
+    },
+    "bossing": {
+        "bosses": {
+            "Abyssal Sire": {
+                "hours": 0,
+                "kc": 0
+            },
+            "Alchemical Hydra": {
+                "hours": 11.166666666666666,
+                "kc": 335
+            },
+            "Callisto": {
+                "hours": 0,
+                "kc": 0
+            },
+            "Cerberus": {
+                "hours": 32.8,
+                "kc": 2132
+            },
+            "Chambers of Xeric": {
+                "hours": 8.857142857142858,
+                "kc": 31
+            },
+            "Chambers of Xeric Challenge Mode": {
+                "hours": 0,
+                "kc": 0
+            },
+            "Chaos Elemental": {
+                "hours": 0,
+                "kc": 0
+            },
+            "Chaos Fanatic": {
+                "hours": 0,
+                "kc": 0
+            },
+            "Commander Zilyana": {
+                "hours": 0,
+                "kc": 0
+            },
+            "Corporeal Beast": {
+                "hours": 0,
+                "kc": 0
+            },
+            "Dagannoth Prime": {
+                "hours": 4.019047619047619,
+                "kc": 422
+            },
+            "Dagannoth Rex": {
+                "hours": 4.019047619047619,
+                "kc": 422
+            },
+            "Dagannoth Supreme": {
+                "hours": 4.295238095238095,
+                "kc": 451
+            },
+            "General Graardor": {
+                "hours": 0,
+                "kc": 0
+            },
+            "Giant Mole": {
+                "hours": 0,
+                "kc": 0
+            },
+            "Grotesque Guardians": {
+                "hours": 0,
+                "kc": 0
+            },
+            "Kalphite Queen": {
+                "hours": 4.381818181818182,
+                "kc": 241
+            },
+            "King Black Dragon": {
+                "hours": 0.046153846153846156,
+                "kc": 6
+            },
+            "Kraken": {
+                "hours": 0,
+                "kc": 0
+            },
+            "KreeArra": {
+                "hours": 0,
+                "kc": 0
+            },
+            "Kril Tsutsaroth": {
+                "hours": 3.4923076923076923,
+                "kc": 227
+            },
+            "Sarachnis": {
+                "hours": 1.481818181818182,
+                "kc": 163
+            },
+            "Scorpia": {
+                "hours": 0,
+                "kc": 0
+            },
+            "Skotizo": {
+                "hours": 0.5333333333333333,
+                "kc": 24
+            },
+            "The Gauntlet": {
+                "hours": 2,
+                "kc": 20
+            },
+            "The Corrupted Gauntlet": {
+                "hours": 137.91666666666666,
+                "kc": 993
+            },
+            "Theatre of Blood": {
+                "hours": 0,
+                "kc": 0
+            },
+            "Thermonuclear Smoke Devil": {
+                "hours": 0,
+                "kc": 0
+            },
+            "TzKal-Zuk": {
+                "hours": 0,
+                "kc": 0
+            },
+            "TzTok-Jad": {
+                "hours": 0,
+                "kc": 0
+            },
+            "Venenatis": {
+                "hours": 0,
+                "kc": 0
+            },
+            "Vetion": {
+                "hours": 0,
+                "kc": 0
+            },
+            "Vorkath": {
+                "hours": 1.4705882352941178,
+                "kc": 50
+            },
+            "Zulrah": {
+                "hours": 14.909090909090908,
+                "kc": 656
+            },
+            "The Nightmare": {
+                "hours": 0,
+                "kc": 0
+            },
+            "Theatre of Blood Challenge Mode": {
+                "hours": 0,
+                "kc": 0
+            },
+            "Phosanis Nightmare": {
+                "hours": 0,
+                "kc": 0
+            },
+            "Nex": {
+                "hours": 0,
+                "kc": 0
+            },
+            "Tombs of Amascut": {
+                "hours": 8.378378378378377,
+                "kc": 31
+            },
+            "Tombs of Amascut Expert": {
+                "hours": 3.3333333333333335,
+                "kc": 10
+            },
+            "Phantom Muspah": {
+                "hours": 0.4666666666666667,
+                "kc": 14
+            },
+            "Artio": {
+                "hours": 0,
+                "kc": 0
+            },
+            "Calvarion": {
+                "hours": 0,
+                "kc": 0
+            },
+            "Spindel": {
+                "hours": 0,
+                "kc": 0
+            },
+            "Duke Sucellus": {
+                "hours": 0,
+                "kc": 0
+            },
+            "The Leviathan": {
+                "hours": 0,
+                "kc": 0
+            },
+            "The Whisperer": {
+                "hours": 0,
+                "kc": 0
+            },
+            "Vardorvis": {
+                "hours": 0,
+                "kc": 0
+            },
+            "Scurrius": {
+                "hours": 0,
+                "kc": 0
+            },
+            "Lunar Chests": {
+                "hours": 10.222222222222221,
+                "kc": 184
+            },
+            "Sol Heredit": {
+                "hours": 0,
+                "kc": 0
+            },
+            "Araxxor": {
+                "hours": 0,
+                "kc": 0
+            },
+            "Hueycoatl": {
+                "hours": 38.111111111111114,
+                "kc": 343
+            },
+            "Amoxliatl": {
+                "hours": 0,
+                "kc": 0
+            },
+            "The Royal Titans": {
+                "hours": 9.145454545454545,
+                "kc": 503
+            },
+            "Yama": {
+                "hours": 0,
+                "kc": 0
+            },
+            "Doom of Mokhaiotl": {
+                "hours": 0,
+                "kc": 0
+            },
+            "Im": {
+                "hours": 334.9371
+            },
+            "Uim": {
+                "hours": 0
+            },
+            "1def": {
+                "hours": 0
+            }
+        },
+        "hours": 334.9371
+    },
+    "skilling": {
+        "Overall": {
+            "hours": {
+                "played": 3379.295124577348,
+                "percentage": 17.2
+            },
+            "level": 2277,
+            "rank": 4595,
+            "xp": 661749577
+        },
+        "Attack": {
+            "hours": {
+                "played": 0,
+                "percentage": 0
+            },
+            "level": 99,
+            "rank": 11811,
+            "xp": 23298055
+        },
+        "Defence": {
+            "hours": {
+                "played": 0,
+                "percentage": 0
+            },
+            "level": 99,
+            "rank": 11732,
+            "xp": 20712409
+        },
+        "Strength": {
+            "hours": {
+                "played": 0.2175999649999539,
+                "percentage": 0
+            },
+            "level": 99,
+            "rank": 30611,
+            "xp": 22128343
+        },
+        "Hitpoints": {
+            "hours": {
+                "played": 0.17759999,
+                "percentage": 0
+            },
+            "level": 99,
+            "rank": 28795,
+            "xp": 35519998
+        },
+        "Ranged": {
+            "hours": {
+                "played": 28.966649995977512,
+                "percentage": 0
+            },
+            "level": 99,
+            "rank": 39910,
+            "xp": 24578362
+        },
+        "Prayer": {
+            "hours": {
+                "played": 99.66205230244456,
+                "percentage": 0
+            },
+            "level": 99,
+            "rank": 1058,
+            "xp": 17530555
+        },
+        "Magic": {
+            "hours": {
+                "played": 0.117032185,
+                "percentage": 0
+            },
+            "level": 99,
+            "rank": 22351,
+            "xp": 23406437
+        },
+        "Cooking": {
+            "hours": {
+                "played": 50.755809080143635,
+                "percentage": 0
+            },
+            "level": 99,
+            "rank": 7307,
+            "xp": 21058183
+        },
+        "Woodcutting": {
+            "hours": {
+                "played": 372.9866106288336,
+                "percentage": 0
+            },
+            "level": 99,
+            "rank": 517,
+            "xp": 74344914
+        },
+        "Fletching": {
+            "hours": {
+                "played": 22.593642983664633,
+                "percentage": 0
+            },
+            "level": 99,
+            "rank": 374,
+            "xp": 34439490
+        },
+        "Fishing": {
+            "hours": {
+                "played": 242.44395504105142,
+                "percentage": 0
+            },
+            "level": 99,
+            "rank": 568,
+            "xp": 37710428
+        },
+        "Firemaking": {
+            "hours": {
+                "played": 52.57041166462919,
+                "percentage": 0
+            },
+            "level": 99,
+            "rank": 8444,
+            "xp": 20121168
+        },
+        "Crafting": {
+            "hours": {
+                "played": 87.12400110147223,
+                "percentage": 0
+            },
+            "level": 99,
+            "rank": 1266,
+            "xp": 21777142
+        },
+        "Smithing": {
+            "hours": {
+                "played": 58.847797069597064,
+                "percentage": 0
+            },
+            "level": 99,
+            "rank": 613,
+            "xp": 20020116
+        },
+        "Mining": {
+            "hours": {
+                "played": 247.17674661520667,
+                "percentage": 0
+            },
+            "level": 99,
+            "rank": 3341,
+            "xp": 20024834
+        },
+        "Herblore": {
+            "hours": {
+                "played": 285.15673609022554,
+                "percentage": 0
+            },
+            "level": 99,
+            "rank": 3937,
+            "xp": 20554675
+        },
+        "Agility": {
+            "hours": {
+                "played": 808.4699516478147,
+                "percentage": 0
+            },
+            "level": 99,
+            "rank": 66,
+            "xp": 76514205
+        },
+        "Thieving": {
+            "hours": {
+                "played": 102.98868215932737,
+                "percentage": 0
+            },
+            "level": 99,
+            "rank": 1590,
+            "xp": 33768252
+        },
+        "Slayer": {
+            "hours": {
+                "played": 487.779443738008,
+                "percentage": 0
+            },
+            "level": 99,
+            "rank": 19849,
+            "xp": 17260010
+        },
+        "Farming": {
+            "hours": {
+                "played": 14.951212965236294,
+                "percentage": 0
+            },
+            "level": 99,
+            "rank": 6619,
+            "xp": 28383912
+        },
+        "Runecraft": {
+            "hours": {
+                "played": 212.9789237402876,
+                "percentage": 0
+            },
+            "level": 99,
+            "rank": 1297,
+            "xp": 20001125
+        },
+        "Hunter": {
+            "hours": {
+                "played": 117.05714901185202,
+                "percentage": 0
+            },
+            "level": 99,
+            "rank": 2018,
+            "xp": 26849078
+        },
+        "Construction": {
+            "hours": {
+                "played": 86.2731166015765,
+                "percentage": 0
+            },
+            "level": 99,
+            "rank": 199,
+            "xp": 21747886
+        },
+        "Im": {
+            "hours": {
+                "played": 3379.2951,
+                "percentage": 0
+            }
+        },
+        "Lvl3": {
+            "hours": {
+                "played": 0,
+                "percentage": 0
+            }
+        },
+        "F2p": {
+            "hours": {
+                "played": 0,
+                "percentage": 0
+            }
+        },
+        "Uim": {
+            "hours": {
+                "played": 0,
+                "percentage": 0
+            }
+        },
+        "1def": {
+            "hours": {
+                "played": 0,
+                "percentage": 0
+            }
+        },
+        "Gim": {
+            "hours": {
+                "played": 0,
+                "percentage": 0
+            }
+        }
+    }
+}

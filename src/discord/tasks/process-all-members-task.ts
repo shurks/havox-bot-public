@@ -5,18 +5,16 @@ import Discord from "../discord"
 import path from "path"
 import Variables from "../../variables"
 import { GuildMember, MembershipScreeningFieldType, messageLink, PermissionsBitField, TextChannel, User } from "discord.js"
-import Stats from "../commands/stats"
 import fetchOrNull from "../fetchOrNull"
+import Stats, { UserStats } from "../commands/stats"
 
 export default class ProcessAllMembersTask {
     public static main = async () => {
         const guild = await Discord.client.guilds.fetch(Variables.var.Guild)
         const repo = Bot.dataSource.getRepository(ClanApplication)
-        const allUserInformation: Record<string, ReturnType<typeof Stats['calculateForUser']> extends Promise<infer A> ? A : null> = JSON.parse(readFileSync(path.join(__dirname, '../../../assets/all-user-information.json')).toString('utf8')) as any
-
+        
         // Rank up notification
         const apps = await repo.find()
-        const usersNotified: string[] = []
 
         // Archive + remove old channels
         for (let app of apps) {
@@ -94,20 +92,18 @@ export default class ProcessAllMembersTask {
                 //     allUserInformation[app.userId] = await Stats.calculateForUser(member.user)
                 // }
                 // Check for rank ups (account-wide)
-                const deservedRank = await this.getDeservedRank(member.user, allUserInformation[app.userId])
-                const currentRank = await this.getCurrentRank(member)
-                const needsRankUp = await this.isLowerRankThan(currentRank, deservedRank)
+                const stats = await Stats.retrieve({ rsn: [app.rsn as string], maxAgeMs: -1 })
+                if (!stats) continue
+                const deservedRank = app.rsn
+                    ? await this.getDeservedRank(member.user, stats[app.rsn], app.rsn)
+                    : 'ClanFriend'
+                const assignedRank = app.assignedRank!
+                const needsRankUp = await this.isLowerRankThan(assignedRank, deservedRank)
                 const alreadyNotified = app.notifiedAboutRank?.length
                     ? app.notifiedAboutRank === deservedRank
                     : false
-                if (needsRankUp && !alreadyNotified && !app.archived && !usersNotified.includes(member.user.id)) {
-                    await channel.send(`Hey <@&${Variables.var.StaffRole}>, we have checked and our member <@${member.user.id}> is applicable to be ranked up to ${Variables.var.Emojis[deservedRank].label} <:aaa:${Variables.var.Emojis[deservedRank].id}>. Please use the \`/set-rank\` command to do so ASAP.`)
-                    usersNotified.push(member.user.id)
-                }
-                if (deservedRank === app.notifiedAboutRank) {
-                    usersNotified.push(member.user.id)
-                }
-                if (usersNotified.includes(member.user.id)) {
+                if (needsRankUp && !alreadyNotified && !app.archived) {
+                    await channel.send(`Hey <@&${Variables.var.StaffRole}>, we have checked and our member <@${member.user.id}> (${app.rsn}) is applicable to be ranked up to ${Variables.var.Emojis[deservedRank].label} <:aaa:${Variables.var.Emojis[deservedRank].id}>. Please use the \`/set-rank\` command to do so ASAP.`);
                     app.notifiedAboutRank = deservedRank
                     await repo.save(app)
                 }
@@ -128,18 +124,20 @@ export default class ProcessAllMembersTask {
         return 'ClanFriend'
     }
 
-    public static getDeservedRank = async (user: User, data: ReturnType<typeof Stats['calculateForUser']> extends Promise<infer A> ? A : null): Promise<keyof typeof Variables.var.Emojis> => {
-        const maxClogs = Number(readFileSync(path.join(__dirname, '../../../assets/max-clogs.txt')).toString('utf8'))
+    public static getDeservedRank = async (user: User, data: UserStats, rsn: string): Promise<keyof typeof Variables.var.Emojis> => {
+        const clogPercentage = Number(data.clog?.slots?.percentage)
+        const clogSlots = Math.max(Number(data.clog?.slots?.current?.hiscores) || 0, Number(data.clog?.slots?.current?.temple) || 0)
+
         for (const [rank, { req }] of Object.entries(Variables.var.Emojis).reverse()) {
             if (req.clogs) {
                 if (typeof req.clogs === 'string') {
-                    const percentage = Number(req.clogs.replace('%', '').trim()) / 100
-                    if (data?.highestClogs >= Math.ceil(percentage * maxClogs)) {
+                    const percentage = Number(req.clogs.replace('%', '').trim())
+                    if (clogPercentage >= Math.ceil(percentage)) {
                         return rank as any
                     }
                 }
                 else {
-                    if (data?.highestClogs >= req.clogs) {
+                    if (clogSlots >= req.clogs) {
                         return rank as any
                     }
                 }
@@ -147,18 +145,18 @@ export default class ProcessAllMembersTask {
             if (req.ehp) {
                 if (typeof req.ehp === 'string') {
                     const percentage = Number(req.ehp.replace('%', '').trim())
-                    if (data?.percentageMaxXP >= percentage) {
+                    if (Number(data?.skilling?.Overall?.hours?.percentage || 0) >= percentage) {
                         return rank as any
                     }
                 }
                 else if (typeof req.ehp === 'number') {
-                    if (Math.round(data?.ehpMax) >= req.ehp) {
+                    if (Math.round(Number(data?.skilling?.Overall?.hours?.played) || 0) >= req.ehp) {
                         return rank as any
                     }
                 }
             }
             if (req.total) {
-                if (data?.total >= req.total) {
+                if ((Number(data?.skilling?.Overall?.level) || 0) >= req.total) {
                     return rank as any
                 }
             }
