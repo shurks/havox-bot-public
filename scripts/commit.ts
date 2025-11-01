@@ -1,7 +1,6 @@
 import { execSync } from "child_process"
 import { writeFileSync } from "fs"
 import path from "path"
-
 const commit = process.argv.filter((v, i) => i > 1).join(' ')
 console.log(commit)
 

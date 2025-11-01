@@ -1,5 +1,8 @@
 import { configDotenv } from "dotenv"
-configDotenv()
+import { existsSync } from "fs";
+import path from "path";
+import dotenv from "dotenv";
+import dotenvExpand from "dotenv-expand";
 export default class Variables {
     public static env: Record<Env, string> = {} as any
     public static get var() {
@@ -240,5 +243,25 @@ export default class Variables {
         // One week
         TrialDurationMs: 1000 * 3600 * 24 * 7
     }
-}
+    }
+    /**
+     * Loads multiple .env files in order (later ones override earlier ones)
+     * e.g. .env, .env.local, .env.development, .env.development.local
+     */
+    public static loadEnv(mode?: string, envDir = process.cwd()) {
+        const envFiles = [
+            `.env`,
+            `.env.local`,
+            mode && `.env.${mode}`,
+            mode && `.env.${mode}.local`,
+        ].filter(Boolean) as string[];
+
+        for (const file of envFiles) {
+            const fullPath = path.resolve(envDir, file);
+            if (existsSync(fullPath)) {
+                const env = dotenv.config({ path: fullPath });
+                dotenvExpand.expand(env);
+            }
+        }
+    }
 }

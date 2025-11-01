@@ -2,7 +2,7 @@ import { configDotenv } from "dotenv"
 import path from "path"
 import { DataSource } from "typeorm"
 import Variables from "./variables"
-configDotenv()
+Variables.loadEnv(process.env.NODE_ENV)
 
 export default new DataSource({
     type: 'mysql',
