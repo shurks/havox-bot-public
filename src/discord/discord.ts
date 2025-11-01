@@ -23,6 +23,7 @@ import { PassThrough } from "stream";
 import Voice from "./voice";
 import SetStreamKey from "./commands/set-stream-key";
 import { ClanApplication } from "../entities/clan-application";
+import Twitch from "../twitch/twitch";
 
 const rankChoices = Object.entries(Variables.var.Emojis).map(([k, v]) => {
     // TODO: calculate
@@ -199,7 +200,17 @@ export default class Discord {
                 ]
             });
             
-            await radio.login(token);
+		try {
+	    await radio.login(token);
+		}
+		catch (err) {
+if (err instanceof Error && err.message.includes("Not enough sessions remaining")) {
+    console.warn("Rate-limited by Discord. Retrying after cooldown...");
+    setTimeout(() => process.exit(1), 60 * 1000); // exit and let PM2 restart later
+  } else {
+    throw err;
+  }
+		}
 
             this.radios[token] = radio
 
@@ -280,6 +291,9 @@ export default class Discord {
                     else if (message.channelId === Variables.var.MemesChannel) {
                         await message.react('😂')
                         await message.react('🔥')
+                    }
+                    if (Twitch.twitchClient && message.channelId === '1419097763286880449') {
+                        await Twitch.twitchClient.say('lijk1337', `${message.author.displayName}: ${message.content}`)
                     }
                 });
         
@@ -386,8 +400,19 @@ export default class Discord {
                 })
             }
             
-            await this.client.login(Variables.env.DISCORD_TOKEN);
-    
+   		try {
+
+	    await this.client.login(Variables.env.DISCORD_TOKEN);
+    	}
+	catch (err) {
+	if (err instanceof Error && err.message.includes("Not enough sessions remaining")) {
+    console.warn("Rate-limited by Discord. Retrying after cooldown...");
+    setTimeout(() => process.exit(1), 60 * 1000); // exit and let PM2 restart later
+  } else {
+    throw err;
+  }
+	}
+
             const rest = new REST({ version: '10' }).setToken(Variables.env.DISCORD_TOKEN!)
             await rest.put(
                 Routes.applicationGuildCommands(Variables.env.DISCORD_BOT_APP_ID!, Variables.env.DISCORD_GUILD_ID!),

@@ -152,7 +152,7 @@ export default class Stats {
                 if (!member) {
                     continue
                 }
-                const calculation = await this.calculateForUser(member.user)
+                const calculation = await this.calculateForUser(member.user, true)
                 calculations.push(calculation)
             }
             catch (err) {}
@@ -160,7 +160,7 @@ export default class Stats {
         writeFileSync(name, JSON.stringify(calculations, null, 4))
     }
 
-    public static calculateForUser = async(user: User) => {
+    public static calculateForUser = async(user: User, allUsers = false) => {
         console.log(`Calculating user stats for "${user.username}"`)
         const allData: Record<string, ReturnType<typeof Stats.calculateForUser> extends Promise<infer A> ? A : any> = JSON.parse(readFileSync(path.join(__dirname, `../../../assets/all-user-information.json`)).toString('utf-8')) as any
         const repo = Bot.dataSource.getRepository(ClanApplication)
@@ -268,29 +268,31 @@ export default class Stats {
             let clogs = 0
             let categories = 0
             let clogsPercentage = 0
-            try {
-                const res2 = await fetch(`https://templeosrs.com/api/collection-log/player_collection_log.php?player=${res.rsn}&categories=champions_challenge,castle_wars`)
+            if (!allUsers) {
                 try {
-                    if (res2.status === 429) {
-                        console.log(`Clogs "${res.rsn}": ${res2.statusText}`)
-                        tooManyRequests = true
-                    }
-                    const json = await res2.json()
-                    if (typeof json.data.total_collections_available === 'number' && json.data.total_collections_available !== current_total_collections_available) {
+                    const res2 = await fetch(`https://templeosrs.com/api/collection-log/player_collection_log.php?player=${res.rsn}&categories=champions_challenge,castle_wars`)
+                    try {
+                        if (res2.status === 429) {
+                            console.log(`Clogs "${res.rsn}": ${res2.statusText}`)
+                            tooManyRequests = true
+                        }
+                        const json = await res2.json()
+                        if (typeof json.data.total_collections_available === 'number' && json.data.total_collections_available !== current_total_collections_available) {
+                            current_total_collections_available = json.data.total_collections_available
+                        }
+                        clogs = json.data.total_collections_finished || 0
+                        EHC = json.data.ehc || 0
+                        categories = json.data.total_categories_finished || 0
+                        clogsPercentage = json.data.total_collections_finished / json.data.total_collections_available
+                        highestCategories = Math.max(highestCategories, categories)
+                        highestClogs = Math.max(highestClogs, clogs)
+                        highestPercentage = Math.max(highestPercentage, clogsPercentage)
                         current_total_collections_available = json.data.total_collections_available
                     }
-                    clogs = json.data.total_collections_finished || 0
-                    EHC = json.data.ehc || 0
-                    categories = json.data.total_categories_finished || 0
-                    clogsPercentage = json.data.total_collections_finished / json.data.total_collections_available
-                    highestCategories = Math.max(highestCategories, categories)
-                    highestClogs = Math.max(highestClogs, clogs)
-                    highestPercentage = Math.max(highestPercentage, clogsPercentage)
-                    current_total_collections_available = json.data.total_collections_available
+                    catch (err) {}
                 }
                 catch (err) {}
             }
-            catch (err) {}
             try {
                 const res3 = await fetch(`https://secure.runescape.com/m=hiscore_oldschool/hiscorepersonal?user1=${encodeURIComponent(res.rsn)}`)
                 if (res3.status === 429) {

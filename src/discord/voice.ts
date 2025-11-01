@@ -13,6 +13,7 @@ export type Stream = {
     passThrough: PassThrough | null
     connection: VoiceConnection | null
     ffmpegProcess: ChildProcess | null
+    twitchProcess: ChildProcess | null
     player: AudioPlayer
 }
 
@@ -43,6 +44,17 @@ export default class Voice {
         }
         // Find voice channel
         const member = await guild.members.fetch(clanApp.userId)
+        const radioBotRepo = Bot.dataSource.getRepository(RadioBot)
+        const users = await radioBotRepo.find({
+            where: {
+                userId: clanApp.userId
+            }
+        })
+        for (const user of users) {
+            await this.closeStream(user.token)
+            user.userId = null
+            await radioBotRepo.save(user)
+        }
         if (!member) {
             console.error('No member.')
             return '❌ User is not in the discord'
@@ -57,7 +69,6 @@ export default class Voice {
             console.error('User not in voice channel.')
             return '❌ User is not in voice channel'
         }
-        const radioBotRepo = Bot.dataSource.getRepository(RadioBot)
         const radioBot = await radioBotRepo.findOne({
             where: {
                 channel: channel.id
@@ -98,6 +109,21 @@ export default class Voice {
         if (typeof connection === 'string') {
             return connection
         }
+        const twitch = (radioBot.channel === '1419097763286880449')
+        // const twitchProcess = twitch ? spawn('ffmpeg', [
+        //     '-re',
+        //     '-i', `rtmp://127.0.0.1:8000/live/${streamKey}`,
+        //     '-reconnect', '1',
+        //     '-reconnect_streamed', '1',
+        //     '-reconnect_delay_max', '5',
+        //     '-c:v', 'libx264',   // re-encode video to H.264
+        //     '-preset', 'veryfast',
+        //     '-b:v', '2500k',
+        //     '-c:a', 'aac',       // re-encode audio to AAC
+        //     '-b:a', '160k',
+        //     '-f', 'flv',
+        //     'rtmp://lhr03.contribute.live-video.net/app/' + streamKey
+        // ]) : null
         const ffmpegProcess = spawn('ffmpeg', [
             '-re',
             '-i', `rtmp://127.0.0.1:8000/live/${streamKey}`,
@@ -118,6 +144,11 @@ export default class Voice {
         ffmpegProcess.stdout.pipe(passThrough)
         ffmpegProcess.on('close', async(code) => {
             console.log('FFmpeg exited with code', code)
+            await this.closeStream(token)
+        })
+        const twitchProcess: ChildProcess = null as any
+        twitchProcess?.on('close', async(code) => {
+            console.log('Twitch exited with code', code)
             await this.closeStream(token)
         })
         ffmpegProcess.stderr?.on('data', (chunk) => {
@@ -155,6 +186,7 @@ export default class Voice {
             passThrough,
             connection,
             ffmpegProcess,
+            twitchProcess,
             player
         }
     }
@@ -170,6 +202,15 @@ export default class Voice {
         }
         const stream = Voice.streams[token]
         if (stream) {
+            if (stream.twitchProcess?.connected) {
+                if (stream.twitchProcess.pid) {
+                    try {
+                        const output = execSync(`kill ${stream.twitchProcess.pid}`, { encoding: 'utf-8' });
+                        console.log(`Killed twitch process`, output)
+                    }
+                    catch (err) {}
+                }
+            }
             if (stream.ffmpegProcess && stream.ffmpegProcess.connected) {
                 if (stream.ffmpegProcess.pid) {
                     try {
@@ -237,10 +278,15 @@ export default class Voice {
             console.error('Connect: User not in voice channel.')
             return '❌ Connect: User is not in voice channel'
         }
+        const radioGuild = await radio.guilds.fetch(guild.id)
+        if (!radioGuild){ 
+            console.error('No guild.')
+            return '❌ The radio bot is not in guild.'
+        }
         return joinVoiceChannel({
             channelId: channel.id,
             guildId: guild.id,
-            adapterCreator: guild.voiceAdapterCreator,
+            adapterCreator: radioGuild.voiceAdapterCreator,
             group: channel.id
         })
     }

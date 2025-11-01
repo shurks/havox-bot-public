@@ -114,6 +114,8 @@ export default class Bot {
                     }
                 }
             }
+            console.log('Starting twitch bot')
+            await Twitch.main()
             console.log('Processing commits')
             await this.processCommits()
             console.log('Initializing express')
@@ -149,6 +151,8 @@ export default class Bot {
             if (counter++ % 12 === 0) {
                 console.log('Approving/declining trialists')
                 await ApproveTrialistTask.main()
+                console.log('Updating all stats...')
+                await Stats.calculateForAllUsers()
                 console.log('✅')
             }
             console.log('✅')

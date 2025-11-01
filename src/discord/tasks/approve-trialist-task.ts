@@ -58,7 +58,9 @@ export default class ApproveTrialistTask {
                     application.trial = false
                     await repo.save(application)
                     // Delete message
-                    await message.delete()
+                    try {
+                        await message.delete()
+                    } catch (err) {}
                 }
                 else {
                     const newMessage = await channels.expelAsap.send({
@@ -77,7 +79,9 @@ export default class ApproveTrialistTask {
                         await applicantMember.roles.add(Variables.var.CommunityMemberRole)
                     }
                     // Delete message
+                    try {
                     await message.delete()
+                    } catch (err) {}
                 }
             }
         }
